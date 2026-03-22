@@ -1,0 +1,16 @@
+# Source (consumers only need dist/)
+src/
+tsconfig.json
+
+# Dev/Build artifacts
+node_modules/
+*.tgz
+
+# Config & Meta
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.env
+.env.local
