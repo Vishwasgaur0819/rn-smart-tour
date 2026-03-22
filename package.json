@@ -1,6 +1,6 @@
 {
   "name": "rn-smart-tour",
-  "version": "1.0.5",
+  "version": "1.0.7",
   "description": "Enterprise-grade Digital Adoption Platform (DAP) package for React Native. Provides guided walkthroughs, tooltips, and app tours.",
   "author": "Vishwas Gaur",
   "license": "MIT",

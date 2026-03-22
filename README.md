@@ -14,6 +14,7 @@
 - ⚡ **Auto-Start Engine**: Trigger tours instantly on mount with a smart debounce for layout stability.
 - 💾 **Seen State Caching**: Persistent "only-once" logic with pluggable storage (AsyncStorage, MMKV, etc.).
 - 🎨 **Smart Overlays**: Dynamic cutouts with Back/Next/Skip navigation and step indicators.
+- 📜 **Auto-Scroll Support**: Seamlessly bring tour targets into view with the new `DapScrollView` integration.
 
 ---
 
@@ -77,6 +78,20 @@ const { startTour } = useDap();
 <Button title="Help" onPress={() => startTour('welcome-tour')} />
 ```
 
+### 4. Enable Auto-Scroll (Optional)
+If your targets are hidden inside a long list, swap your standard `ScrollView` for `DapScrollView`. The tour will automatically scroll to bring each target into the user's view.
+
+```tsx
+import { DapScrollView } from 'rn-smart-tour';
+
+// ... inside your screen
+<DapScrollView>
+  <DapTarget name="bottom-btn">
+    <Button title="Secret Button" ... />
+  </DapTarget>
+</DapScrollView>
+```
+
 ---
 
 ## 🧠 Technical Architecture
@@ -112,12 +127,18 @@ When `autoStart: true` is enabled, the overlay waits **300ms** after registratio
 | `autoStart` | `boolean` | Trigger as soon as the first target mounts. |
 | `steps` | `TourStep[]` | Sequence of highlight steps. |
 
+### DapScrollView
+A direct drop-in replacement for the React Native `ScrollView`. Supports all standard props.
+| Property | Type | Description |
+|:---|:---|:---|
+| `children` | `React.Node` | Components to scroll. |
+| `...props` | `ScrollViewProps` | Standard props are forwarded to the native ScrollView. |
+
 ### DapTarget
 | Property | Type | Description |
 |:---|:---|:---|
 | `name` | `string` | Unique identifier that matches a `targetId` in a tour step. |
 | `children` | `ReactElement` | The UI element to wrap and highlight. |
-| `asChild` | `boolean` | **New!** If true, clones the child to avoid an extra View wrapper. (Crucial for flex/percentage layouts). |
 | `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
 
 ### TourStep

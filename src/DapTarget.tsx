@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, ReactElement, useContext, useCallback, cloneElement, Children, isValidElement } from 'react';
+import React, { useRef, useEffect, ReactElement, useContext, useCallback } from 'react';
 import { View, ViewProps, LayoutChangeEvent, Dimensions } from 'react-native';
 import { DapContext } from './DapContext';
 import { TargetMeasurement } from './types';
@@ -13,33 +13,12 @@ const MEASUREMENT_DELAYS = [100, 500, 1000];
 /** Threshold in points — ignore sub-pixel drift to avoid unnecessary re-registers. */
 const POSITION_THRESHOLD = 1;
 
-/**
- * Utility to merge multiple refs into a single callback ref.
- */
-function setRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
-  return (value: T) => {
-    refs.forEach((ref) => {
-      if (typeof ref === 'function') {
-        ref(value);
-      } else if (ref && typeof ref === 'object') {
-        (ref as React.MutableRefObject<T | null>).current = value;
-      }
-    });
-  };
-}
-
 interface DapTargetProps extends ViewProps {
   name: string;
-  children: ReactElement;
-  /**
-   * If true, DapTarget will not wrap your child in a View. Instead, it will
-   * clone the child and inject the ref/onLayout logic directly.
-   * Useful for maintaining flex layouts or percentage widths (e.g. 33%).
-   */
-  asChild?: boolean;
+  children: ReactElement | ReactElement[];
 }
 
-export const DapTarget: React.FC<DapTargetProps> = ({ name, children, asChild, ...props }) => {
+export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }) => {
   const viewRef = useRef<View>(null);
   const context = useContext(DapContext);
 
@@ -90,7 +69,8 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, asChild, .
 
           if (hasPositionChanged(lastMeasurementRef.current, next)) {
             lastMeasurementRef.current = next;
-            context.registerTarget(name, next);
+            // Pass viewRef.current to enable Auto-Scroll layout measurements
+            context.registerTarget(name, next, viewRef.current);
           }
         });
       }, delay);
@@ -132,27 +112,20 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, asChild, .
     };
   }, [name, unregisterTarget, clearAllTimers]);
 
-  // If asChild is enabled, clone the child and inject measurement logic.
-  if (asChild && isValidElement(children)) {
-    try {
-      const child = Children.only(children) as ReactElement<any>;
-      
-      return cloneElement(child, {
-        ...props,
-        ref: setRefs(viewRef, (child as any).ref),
-        onLayout: (e: LayoutChangeEvent) => {
-          handleLayout(e);
-          child.props.onLayout?.(e);
-        },
-        // collapsable={false} is vital for Android measurement
-        collapsable: false,
-      });
-    } catch (e) {
-      console.warn('[rn-dap] asChild requires a single React element as a child.');
+  /** 
+   * Auto-Scroll Trigger: If this target becomes the active step in a tour,
+   * request the provider to bring it into view.
+   */
+  useEffect(() => {
+    if (!context || !context.activeTour) return;
+    
+    const activeStep = context.activeTour.steps[context.currentStepIndex];
+    if (activeStep?.targetId === name && context.requestScroll) {
+      context.requestScroll(name);
     }
-  }
+  }, [context?.activeTour, context?.currentStepIndex, context?.requestScroll, name]);
 
-  // Fallback to standard View wrapper
+  // Always use standard View wrapper (asChild reverted per user preference)
   return (
     <View ref={viewRef} onLayout={handleLayout} collapsable={false} {...props}>
       {children}

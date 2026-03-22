@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { findNodeHandle } from 'react-native';
 import { DapContext } from './DapContext';
 import { Tour, TargetMeasurement, StorageAdapter } from './types';
 import { DapOverlay } from './DapOverlay';
@@ -6,16 +7,10 @@ import { DapOverlay } from './DapOverlay';
 export interface DapProviderProps {
   children: React.ReactNode;
   tours: Record<string, Tour>;
-  storageAdapter?: StorageAdapter; // Accept MMKV, AsyncStorage, etc.
+  storageAdapter?: StorageAdapter;
 }
 
 const STORAGE_KEY = '@rn-dap:seen_tours';
-
-/**
- * Debounce delay (ms) before auto-starting a tour after a target registers.
- * This gives the multi-pass measurement in DapTarget time to settle on the
- * final coordinates before the overlay is shown.
- */
 const AUTO_START_DEBOUNCE_MS = 300;
 
 export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, storageAdapter }) => {
@@ -25,16 +20,15 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
   const [seenTours, setSeenTours] = useState<Record<string, boolean>>({});
   const [isStorageLoaded, setIsStorageLoaded] = useState(!storageAdapter);
 
-  // Ref to always hold the latest activeTourId, avoiding stale closures.
   const activeTourIdRef = useRef(activeTourId);
   activeTourIdRef.current = activeTourId;
 
-  /**
-   * Ref to track the ID of a tour that was just manually stopped/skipped.
-   * This prevents the auto-start engine from immediately restarting the same tour
-   * before the 'seenTours' state update has been processed.
-   */
   const tourIdJustStoppedRef = useRef<string | null>(null);
+
+  /** Map of target IDs to their native component references (for measureLayout). */
+  const targetRefs = useRef<Record<string, any>>({});
+  /** Reference to the active ScrollView (if any) for auto-scrolling. */
+  const scrollRef = useRef<any>(null);
 
   // Load seen tours on mount if a storage adapter is provided
   useEffect(() => {
@@ -58,7 +52,6 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     setSeenTours(prev => {
       const nextSeen = { ...prev, [tourId]: true };
       if (storageAdapter) {
-        // Safe side-effect here for async storage, as long as it's fire-and-forget
         Promise.resolve(storageAdapter.setItem(STORAGE_KEY, JSON.stringify(nextSeen))).catch(e => {
           console.error('[rn-dap] failed to save storage', e);
         });
@@ -67,8 +60,11 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     });
   }, [storageAdapter]);
 
-  const registerTarget = useCallback((id: string, measurement: TargetMeasurement) => {
+  const registerTarget = useCallback((id: string, measurement: TargetMeasurement, ref?: any) => {
     setTargets(prev => ({ ...prev, [id]: measurement }));
+    if (ref) {
+      targetRefs.current[id] = ref;
+    }
   }, []);
 
   const unregisterTarget = useCallback((id: string) => {
@@ -77,6 +73,44 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
       delete next[id];
       return next;
     });
+    delete targetRefs.current[id];
+  }, []);
+
+  const _registerScrollRef = useCallback((ref: any) => {
+    scrollRef.current = ref;
+  }, []);
+
+  /**
+   * Calculates the relative position of a target to the registered ScrollView
+   * and triggers a native scrollTo call.
+   */
+  const requestScroll = useCallback((targetId: string) => {
+    const target = targetRefs.current[targetId];
+    const scroll = scrollRef.current;
+
+    if (!target || !scroll) return;
+
+    // Use measureLayout for scrollable positioning calculation
+    const targetHandle = findNodeHandle(target);
+    const scrollHandle = findNodeHandle(scroll);
+
+    if (targetHandle && scrollHandle) {
+         try {
+            target.measureLayout(
+                scrollHandle,
+                (_x: number, y: number) => {
+                    // Scroll target into view with some top padding
+                    scroll.scrollTo({ y: Math.max(0, y - 100), animated: true });
+                },
+                () => {
+                    console.warn(`[rn-dap] Failed to measure layout for target: ${targetId}`);
+                }
+            );
+         } catch (e) {
+             // Fallback if measureLayout isn't available on the component ref directly
+             console.warn('[rn-dap] measureLayout failed', e);
+         }
+    }
   }, []);
 
   const startTour = useCallback((tourId: string) => {
@@ -94,7 +128,6 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
       if (markAsSeen) {
         saveSeenTour(currentTourId);
       }
-      // Block this specific tour from auto-restarting until coordinates or seenTours settle.
       tourIdJustStoppedRef.current = currentTourId;
     }
     setActiveTourId(null);
@@ -107,7 +140,6 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
       if (currentStepIndex < tour.steps.length - 1) {
         setCurrentStepIndex(prev => prev + 1);
       } else {
-        // Finished the last step
         stopTour(true);
       }
     }
@@ -119,43 +151,29 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     }
   }, [currentStepIndex]);
 
-  /** Timer ref for debounced auto-start. */
   const autoStartTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // Auto-Start Engine — debounced so multi-pass measurements can settle.
   useEffect(() => {
-    // Wait until storage is loaded, and ensure no tour is currently running
     if (!isStorageLoaded || activeTourId) return;
-
-    // Clear any previously scheduled auto-start
     if (autoStartTimerRef.current) {
       clearTimeout(autoStartTimerRef.current);
     }
-
     autoStartTimerRef.current = setTimeout(() => {
       for (const tourId of Object.keys(tours)) {
         const tour = tours[tourId];
-        
-        // Skip if this tour was just manually stopped and haven't confirmed 'seen' yet.
         const wasJustStopped = tourIdJustStoppedRef.current === tourId;
-
         if (tour.autoStart && !seenTours[tourId] && !wasJustStopped && tour.steps.length > 0) {
           const firstTargetId = tour.steps[0].targetId;
-
-          // If the first target of an unread, auto-starting tour is mounted
           if (targets[firstTargetId]) {
             startTour(tourId);
-            break; // Start only one auto-tour at a time
+            break;
           }
         }
       }
-
-      // Cleanup the "just stopped" ref once the seenTours state finally reflects the closure.
       if (tourIdJustStoppedRef.current && seenTours[tourIdJustStoppedRef.current]) {
         tourIdJustStoppedRef.current = null;
       }
     }, AUTO_START_DEBOUNCE_MS);
-
     return () => {
       if (autoStartTimerRef.current) {
         clearTimeout(autoStartTimerRef.current);
@@ -175,7 +193,9 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     activeTour,
     currentStepIndex,
     targets,
-    seenTours
+    seenTours,
+    requestScroll,
+    _registerScrollRef
   }), [
     registerTarget,
     unregisterTarget,
@@ -186,7 +206,9 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     activeTour,
     currentStepIndex,
     targets,
-    seenTours
+    seenTours,
+    requestScroll,
+    _registerScrollRef
   ]);
 
   return (

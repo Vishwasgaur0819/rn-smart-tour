@@ -24,7 +24,7 @@ export interface StorageAdapter {
 }
 
 export interface DapContextType {
-  registerTarget: (id: string, measurement: TargetMeasurement) => void;
+  registerTarget: (id: string, measurement: TargetMeasurement, ref?: any) => void;
   unregisterTarget: (id: string) => void;
   startTour: (tourId: string) => void;
   nextStep: () => void;
@@ -34,4 +34,8 @@ export interface DapContextType {
   currentStepIndex: number;
   targets: Record<string, TargetMeasurement>;
   seenTours: Record<string, boolean>;
+  /** Requests the provider to scroll the active DapScrollView to a specific target. */
+  requestScroll: (targetId: string) => void;
+  /** Internal use only: registers a ScrollView's native ref for coordinate calculations. */
+  _registerScrollRef: (ref: any) => void;
 }
