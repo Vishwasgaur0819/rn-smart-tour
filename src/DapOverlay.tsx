@@ -120,9 +120,11 @@ export const DapOverlay = () => {
           )}
 
           <View style={styles.actions}>
-            <TouchableOpacity onPress={() => stopTour()} style={styles.actionBtn}>
-              <Text style={styles.actionText}>Skip</Text>
-            </TouchableOpacity>
+            {!isLastStep && (
+              <TouchableOpacity onPress={() => stopTour()} style={styles.actionBtn}>
+                <Text style={styles.actionText}>Skip</Text>
+              </TouchableOpacity>
+            )}
 
             {!isFirstStep && (
               <TouchableOpacity onPress={prevStep} style={styles.actionBtn}>

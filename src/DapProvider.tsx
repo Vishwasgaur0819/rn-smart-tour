@@ -25,9 +25,16 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
   const [seenTours, setSeenTours] = useState<Record<string, boolean>>({});
   const [isStorageLoaded, setIsStorageLoaded] = useState(!storageAdapter);
 
-  // Ref to avoid stale closures — always holds the latest activeTourId.
+  // Ref to always hold the latest activeTourId, avoiding stale closures.
   const activeTourIdRef = useRef(activeTourId);
   activeTourIdRef.current = activeTourId;
+
+  /**
+   * Ref to track the ID of a tour that was just manually stopped/skipped.
+   * This prevents the auto-start engine from immediately restarting the same tour
+   * before the 'seenTours' state update has been processed.
+   */
+  const tourIdJustStoppedRef = useRef<string | null>(null);
 
   // Load seen tours on mount if a storage adapter is provided
   useEffect(() => {
@@ -81,11 +88,14 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     }
   }, [tours, seenTours]);
 
-  // Uses activeTourIdRef to avoid stale closures and prevent cascading re-renders.
   const stopTour = useCallback((markAsSeen = true) => {
     const currentTourId = activeTourIdRef.current;
-    if (currentTourId && markAsSeen) {
-      saveSeenTour(currentTourId);
+    if (currentTourId) {
+      if (markAsSeen) {
+        saveSeenTour(currentTourId);
+      }
+      // Block this specific tour from auto-restarting until coordinates or seenTours settle.
+      tourIdJustStoppedRef.current = currentTourId;
     }
     setActiveTourId(null);
     setCurrentStepIndex(0);
@@ -125,7 +135,11 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
     autoStartTimerRef.current = setTimeout(() => {
       for (const tourId of Object.keys(tours)) {
         const tour = tours[tourId];
-        if (tour.autoStart && !seenTours[tourId] && tour.steps.length > 0) {
+        
+        // Skip if this tour was just manually stopped and haven't confirmed 'seen' yet.
+        const wasJustStopped = tourIdJustStoppedRef.current === tourId;
+
+        if (tour.autoStart && !seenTours[tourId] && !wasJustStopped && tour.steps.length > 0) {
           const firstTargetId = tour.steps[0].targetId;
 
           // If the first target of an unread, auto-starting tour is mounted
@@ -134,6 +148,11 @@ export const DapProvider: React.FC<DapProviderProps> = ({ children, tours, stora
             break; // Start only one auto-tour at a time
           }
         }
+      }
+
+      // Cleanup the "just stopped" ref once the seenTours state finally reflects the closure.
+      if (tourIdJustStoppedRef.current && seenTours[tourIdJustStoppedRef.current]) {
+        tourIdJustStoppedRef.current = null;
       }
     }, AUTO_START_DEBOUNCE_MS);
 

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, ReactElement, useContext, useCallback } from 'react';
+import React, { useRef, useEffect, ReactElement, useContext, useCallback, cloneElement, Children, isValidElement } from 'react';
 import { View, ViewProps, LayoutChangeEvent, Dimensions } from 'react-native';
 import { DapContext } from './DapContext';
 import { TargetMeasurement } from './types';
@@ -13,12 +13,33 @@ const MEASUREMENT_DELAYS = [100, 500, 1000];
 /** Threshold in points — ignore sub-pixel drift to avoid unnecessary re-registers. */
 const POSITION_THRESHOLD = 1;
 
+/**
+ * Utility to merge multiple refs into a single callback ref.
+ */
+function setRefs<T>(...refs: (React.Ref<T> | undefined)[]) {
+  return (value: T) => {
+    refs.forEach((ref) => {
+      if (typeof ref === 'function') {
+        ref(value);
+      } else if (ref && typeof ref === 'object') {
+        (ref as React.MutableRefObject<T | null>).current = value;
+      }
+    });
+  };
+}
+
 interface DapTargetProps extends ViewProps {
   name: string;
   children: ReactElement;
+  /**
+   * If true, DapTarget will not wrap your child in a View. Instead, it will
+   * clone the child and inject the ref/onLayout logic directly.
+   * Useful for maintaining flex layouts or percentage widths (e.g. 33%).
+   */
+  asChild?: boolean;
 }
 
-export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }) => {
+export const DapTarget: React.FC<DapTargetProps> = ({ name, children, asChild, ...props }) => {
   const viewRef = useRef<View>(null);
   const context = useContext(DapContext);
 
@@ -111,7 +132,27 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }
     };
   }, [name, unregisterTarget, clearAllTimers]);
 
-  // collapsable={false} is vital for Android, otherwise it gets optimized away and measure fails
+  // If asChild is enabled, clone the child and inject measurement logic.
+  if (asChild && isValidElement(children)) {
+    try {
+      const child = Children.only(children) as ReactElement<any>;
+      
+      return cloneElement(child, {
+        ...props,
+        ref: setRefs(viewRef, (child as any).ref),
+        onLayout: (e: LayoutChangeEvent) => {
+          handleLayout(e);
+          child.props.onLayout?.(e);
+        },
+        // collapsable={false} is vital for Android measurement
+        collapsable: false,
+      });
+    } catch (e) {
+      console.warn('[rn-dap] asChild requires a single React element as a child.');
+    }
+  }
+
+  // Fallback to standard View wrapper
   return (
     <View ref={viewRef} onLayout={handleLayout} collapsable={false} {...props}>
       {children}

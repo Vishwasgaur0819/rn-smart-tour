@@ -112,6 +112,14 @@ When `autoStart: true` is enabled, the overlay waits **300ms** after registratio
 | `autoStart` | `boolean` | Trigger as soon as the first target mounts. |
 | `steps` | `TourStep[]` | Sequence of highlight steps. |
 
+### DapTarget
+| Property | Type | Description |
+|:---|:---|:---|
+| `name` | `string` | Unique identifier that matches a `targetId` in a tour step. |
+| `children` | `ReactElement` | The UI element to wrap and highlight. |
+| `asChild` | `boolean` | **New!** If true, clones the child to avoid an extra View wrapper. (Crucial for flex/percentage layouts). |
+| `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
+
 ### TourStep
 | Property | Type | Default | Description |
 |:---|:---|:---|:---|
