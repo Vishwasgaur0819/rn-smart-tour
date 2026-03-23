@@ -1,9 +1,17 @@
 {
   "name": "rn-smart-tour",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Enterprise-grade Digital Adoption Platform (DAP) package for React Native. Provides guided walkthroughs, tooltips, and app tours.",
   "author": "Vishwas Gaur",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vishwasgaur0819/rn-smart-tour.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vishwasgaur0819/rn-smart-tour/issues"
+  },
+  "homepage": "https://github.com/Vishwasgaur0819/rn-smart-tour#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
