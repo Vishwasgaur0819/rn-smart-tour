@@ -1,7 +1,9 @@
-import React, { useRef, useEffect, ReactElement, useContext, useCallback } from 'react';
-import { View, ViewProps, LayoutChangeEvent, Dimensions } from 'react-native';
+import React, { useRef, useEffect, useContext, useCallback } from 'react';
+import type { ReactElement } from 'react';
+import { View, Dimensions } from 'react-native';
+import type { ViewProps, LayoutChangeEvent } from 'react-native';
 import { DapContext } from './DapContext';
-import { TargetMeasurement } from './types';
+import type { TargetMeasurement } from './types';
 
 /**
  * Multi-pass measurement delays (ms).
@@ -18,7 +20,7 @@ interface DapTargetProps extends ViewProps {
   children: ReactElement | ReactElement[];
 }
 
-export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }) => {
+export const DapTarget: React.FC<DapTargetProps> = ({ name, children, onLayout, ...props }) => {
   const viewRef = useRef<View>(null);
   const context = useContext(DapContext);
 
@@ -69,7 +71,7 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }
 
           if (hasPositionChanged(lastMeasurementRef.current, next)) {
             lastMeasurementRef.current = next;
-            // Pass viewRef.current to enable Auto-Scroll layout measurements
+            // Pass viewRef.current so the provider can re-measure and auto-scroll to it
             context.registerTarget(name, next, viewRef.current);
           }
         });
@@ -84,9 +86,9 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
       measureAndRegister();
-      props.onLayout?.(e);
+      onLayout?.(e);
     },
-    [measureAndRegister, props.onLayout],
+    [measureAndRegister, onLayout],
   );
 
   const unregisterTarget = context?.unregisterTarget;
@@ -112,22 +114,10 @@ export const DapTarget: React.FC<DapTargetProps> = ({ name, children, ...props }
     };
   }, [name, unregisterTarget, clearAllTimers]);
 
-  /** 
-   * Auto-Scroll Trigger: If this target becomes the active step in a tour,
-   * request the provider to bring it into view.
-   */
-  useEffect(() => {
-    if (!context || !context.activeTour) return;
-    
-    const activeStep = context.activeTour.steps[context.currentStepIndex];
-    if (activeStep?.targetId === name && context.requestScroll) {
-      context.requestScroll(name);
-    }
-  }, [context?.activeTour, context?.currentStepIndex, context?.requestScroll, name]);
-
-  // Always use standard View wrapper (asChild reverted per user preference)
+  // Spread props first so a caller's collapsable cannot replace ours
+  // (handleLayout already forwards to the caller's onLayout).
   return (
-    <View ref={viewRef} onLayout={handleLayout} collapsable={false} {...props}>
+    <View {...props} ref={viewRef} onLayout={handleLayout} collapsable={false}>
       {children}
     </View>
   );
