@@ -1,16 +1,23 @@
 {
   "compilerOptions": {
-    "target": "esnext",
-    "module": "commonjs",
-    "lib": ["esnext", "dom"],
-    "jsx": "react-native",
-    "declaration": true,
-    "outDir": "./dist",
+    "rootDir": ".",
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "jsx": "react-jsx",
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true,
+    "types": ["jest"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src"],
+  "exclude": ["node_modules", "lib", "example"]
 }

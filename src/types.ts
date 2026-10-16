@@ -23,15 +23,30 @@ export interface StorageAdapter {
   setItem: (key: string, value: string) => Promise<void> | void;
 }
 
+export interface StartTourOptions {
+  /** Start the tour even if it has already been seen (e.g. from a "Help" button). */
+  force?: boolean;
+}
+
 export interface DapContextType {
-  registerTarget: (id: string, measurement: TargetMeasurement) => void;
+  registerTarget: (id: string, measurement: TargetMeasurement, ref?: any) => void;
   unregisterTarget: (id: string) => void;
-  startTour: (tourId: string) => void;
+  startTour: (tourId: string, options?: StartTourOptions) => void;
   nextStep: () => void;
   prevStep: () => void;
   stopTour: (markAsSeen?: boolean) => void;
+  /** Mark a tour as unseen so it can be shown (and auto-started) again. */
+  resetTour: (tourId: string) => void;
+  /** Mark every tour as unseen. */
+  resetAll: () => void;
   activeTour: Tour | null;
   currentStepIndex: number;
   targets: Record<string, TargetMeasurement>;
   seenTours: Record<string, boolean>;
+  /** Requests the provider to scroll the active DapScrollView to a specific target. */
+  requestScroll: (targetId: string) => void;
+  /** Internal use only: registers a ScrollView's native ref for coordinate calculations. */
+  _registerScrollRef: (ref: any) => void;
+  /** Internal use only: clears the ScrollView ref, but only if it is still the registered one. */
+  _unregisterScrollRef: (ref: any) => void;
 }

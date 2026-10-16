@@ -1,13 +1,6 @@
-import React, { useContext } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Modal,
-  TouchableOpacity,
-  useWindowDimensions,
-  ViewStyle,
-} from 'react-native';
+import { useContext } from 'react';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
+import type { ViewStyle } from 'react-native';
 import { DapContext } from './DapContext';
 
 /** Gap (pts) between the target highlight and the tooltip card. */
@@ -58,10 +51,7 @@ export const DapOverlay = () => {
     // Horizontal centering by default
     left: Math.max(
       EDGE_PADDING,
-      Math.min(
-        x + width / 2 - TOOLTIP_WIDTH / 2,
-        screenWidth - TOOLTIP_WIDTH - EDGE_PADDING,
-      ),
+      Math.min(x + width / 2 - TOOLTIP_WIDTH / 2, screenWidth - TOOLTIP_WIDTH - EDGE_PADDING),
     ),
   };
 
@@ -96,8 +86,14 @@ export const DapOverlay = () => {
   const isLastStep = currentStepIndex === activeTour.steps.length - 1;
 
   return (
-    <Modal transparent visible animationType="fade">
-      <View style={styles.fullscreen}>
+    // onRequestClose: the Android back button dismisses the tour, like "Skip".
+    <Modal transparent visible animationType="fade" onRequestClose={() => stopTour()}>
+      {/*
+        Sized explicitly from the window rather than absoluteFill: on the New Architecture the
+        Modal's content container does not reliably fill the screen, which hid the bottom
+        backdrop and every tooltip positioned with `bottom` (position: 'top').
+      */}
+      <View style={[styles.fullscreen, { width: screenWidth, height: screenHeight }]}>
         {/* Top backdrop */}
         <View style={[styles.backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
         {/* Bottom backdrop */}
@@ -133,9 +129,7 @@ export const DapOverlay = () => {
             )}
 
             <TouchableOpacity onPress={nextStep} style={[styles.actionBtn, styles.primaryBtn]}>
-              <Text style={[styles.actionText, styles.primaryText]}>
-                {isLastStep ? 'Finish' : 'Next'}
-              </Text>
+              <Text style={[styles.actionText, styles.primaryText]}>{isLastStep ? 'Finish' : 'Next'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -146,7 +140,9 @@ export const DapOverlay = () => {
 
 const styles = StyleSheet.create({
   fullscreen: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   backdrop: {
     position: 'absolute',
