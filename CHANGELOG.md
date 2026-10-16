@@ -2,12 +2,17 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased (2.0.0)
+## 2.0.0-beta.0 — 2026-10-16
+
+Published under the `next` tag: `npm install rn-smart-tour@next`. `latest` stays on 1.1.0 until 2.0.0 is stable.
+
+Checked on device: iOS and Android with React Native 0.88 (New Architecture, React 19), and iOS with React Native 0.81 on the old architecture, using React Navigation 7 (native-stack) and a FlatList. Unit tests run against React Native 0.73 (React 18).
 
 ### New core
 - Targets register a ref only. A target is measured when its step becomes current: it is scrolled into view if needed, then measured every frame until it stops moving, and only then shown. While shown, it is re-measured when its layout changes, the window resizes, the keyboard opens or closes, or the app returns to the foreground.
 - Tour state lives in a small external store read with `useSyncExternalStore`. Mounting, moving or measuring targets no longer re-renders `TourTarget`s or components using `useTour`.
 - Moving between steps keeps the current step on screen until the next one is measured (no flicker), and taps on "Next" during that time are ignored.
+- The overlay fades in and disappears instantly. (The Modal's own fade-out used to leave the previous step drawn over a screen that was navigating away.)
 
 ### Added
 - New names: `TourProvider`, `TourTarget`, `TourScrollView`, `useTour`.
