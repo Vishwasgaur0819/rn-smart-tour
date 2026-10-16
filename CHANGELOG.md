@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased (2.0.0)
+
+### New core
+- Targets register a ref only. A target is measured when its step becomes current: it is scrolled into view if needed, then measured every frame until it stops moving, and only then shown. While shown, it is re-measured when its layout changes, the window resizes, the keyboard opens or closes, or the app returns to the foreground.
+- Tour state lives in a small external store read with `useSyncExternalStore`. Mounting, moving or measuring targets no longer re-renders `TourTarget`s or components using `useTour`.
+- Moving between steps keeps the current step on screen until the next one is measured (no flicker), and taps on "Next" during that time are ignored.
+
+### Added
+- New names: `TourProvider`, `TourTarget`, `TourScrollView`, `useTour`.
+- `TourScope`: targets only count while their scope is active, so screens kept mounted in the background are never highlighted.
+- `rn-smart-tour/react-navigation` → `NavigationTourScope`: a scope that is active while its screen is focused and not animating. `@react-navigation/native` (≥ 6) is an optional peer dependency.
+- `TourScrollable`: auto-scroll for any scroll container (`ScrollView`, `FlatList`, `SectionList`); each target uses its nearest one, so several lists and nested screens work.
+- Step options: `beforeEnter` (e.g. navigate to the screen with the target; awaited), `onMissingTarget: 'end' | 'skip'`, `targetTimeoutMs`.
+- `useTour().status` (`'idle' | 'waiting' | 'active'`) and `useTourState(selector)` for components that need specific state.
+- A development warning when several on-screen targets share a name.
+
+### Changed (breaking)
+- Peer dependencies: React ≥ 18, React Native ≥ 0.73.
+- A step appears a few frames after it starts (once its target has stopped moving) rather than immediately.
+- `useDap().targets` only contains the measurement of the step being shown. `requestScroll`, `_registerScrollRef` and `_unregisterScrollRef` do nothing; scrolling is automatic.
+- `DapProvider`, `DapTarget`, `DapScrollView` and `useDap` still work but are deprecated.
+
 ## 1.1.0 — 2026-10-16
 
 ### Added

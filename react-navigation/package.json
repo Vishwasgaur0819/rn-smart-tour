@@ -1,0 +1,6 @@
+{
+  "main": "../lib/commonjs/react-navigation.js",
+  "module": "../lib/module/react-navigation.js",
+  "react-native": "../lib/module/react-navigation.js",
+  "types": "../lib/typescript/commonjs/src/react-navigation.d.ts"
+}

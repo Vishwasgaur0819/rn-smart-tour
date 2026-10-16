@@ -1,15 +1,24 @@
 /**
  * rn-smart-tour example app.
  *
- * Each section exercises one behaviour so it can be checked by hand (and later
- * by Maestro flows): auto-start, replaying a seen tour, auto-scroll, a step
- * whose target is missing, and a target that has its own onLayout.
+ * Mirrors a typical production setup (React Navigation native-stack, a FlatList,
+ * persisted seen state) and exercises one behaviour per tour: auto-start,
+ * auto-scroll inside a FlatList, a tour that moves between screens, a step whose
+ * target is missing, and two screens that both have a target named "title".
  */
-import { useState } from 'react';
-import { Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { DapProvider, DapScrollView, DapTarget, useDap } from 'rn-smart-tour';
+import { useRef } from 'react';
+import { FlatList, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { TourProvider, TourScrollable, TourTarget, useTour } from 'rn-smart-tour';
 import type { StorageAdapter, Tour } from 'rn-smart-tour';
+import { NavigationTourScope } from 'rn-smart-tour/react-navigation';
+import { QaDriver } from './QaDriver';
+
+type RootStack = { Home: undefined; Details: undefined };
+const Stack = createNativeStackNavigator<RootStack>();
+const navigationRef = createNavigationContainerRef<RootStack>();
 
 const TOURS: Record<string, Tour> = {
   welcome: {
@@ -18,20 +27,42 @@ const TOURS: Record<string, Tour> = {
     steps: [
       { targetId: 'title', title: 'Welcome', description: 'This tour starts by itself the first time.' },
       { targetId: 'help', title: 'Help', description: 'Replays the welcome tour, even after it was seen.' },
-      { targetId: 'layout-card', title: 'Your own onLayout', description: 'Still measured correctly.', position: 'top' },
+      { targetId: 'open-details', title: 'Another screen', description: 'Opens a second screen.' },
     ],
   },
   scroll: {
     id: 'scroll',
     steps: [
-      { targetId: 'start-scroll', title: 'Auto-scroll', description: 'Next, the list scrolls to a target below the fold.' },
-      { targetId: 'deep-target', title: 'Found it', description: 'The highlight follows the target after scrolling.', position: 'top' },
+      { targetId: 'start-scroll', title: 'Auto-scroll', description: 'Next, the list scrolls to row 25.' },
+      { targetId: 'row-25', title: 'Row 25', description: 'Scrolled into view, then measured.', position: 'top' },
     ],
+  },
+  cross: {
+    id: 'cross',
+    steps: [
+      { targetId: 'start-cross', title: 'Across screens', description: 'Next opens the details screen.' },
+      {
+        targetId: 'details-card',
+        title: 'On another screen',
+        description: 'Shown once the screen has finished animating in.',
+        beforeEnter: () => navigationRef.navigate('Details'),
+      },
+      {
+        targetId: 'help',
+        title: 'And back',
+        description: 'Back on the first screen.',
+        beforeEnter: () => navigationRef.goBack(),
+      },
+    ],
+  },
+  titleOnly: {
+    id: 'titleOnly',
+    steps: [{ targetId: 'title', title: 'Which title?', description: 'Only the focused screen counts.' }],
   },
   broken: {
     id: 'broken',
     steps: [
-      { targetId: 'start-broken', title: 'Missing target', description: 'The next step points at a target that does not exist.' },
+      { targetId: 'start-broken', title: 'Missing target', description: 'The next step points at nothing.' },
       { targetId: 'does-not-exist', title: 'Never shown', description: '' },
     ],
   },
@@ -39,6 +70,12 @@ const TOURS: Record<string, Tour> = {
 
 /** In-memory storage. Real apps pass AsyncStorage or an MMKV wrapper. */
 const memory: Record<string, string> = {};
+const storage: StorageAdapter = {
+  getItem: key => memory[key] ?? null,
+  setItem: (key, value) => {
+    memory[key] = value;
+  },
+};
 
 const Button = ({ label, onPress, testID }: { label: string; onPress: () => void; testID: string }) => (
   <Pressable testID={testID} onPress={onPress} style={({ pressed }) => [styles.button, pressed && styles.pressed]}>
@@ -46,55 +83,102 @@ const Button = ({ label, onPress, testID }: { label: string; onPress: () => void
   </Pressable>
 );
 
-const Home = () => {
-  const { startTour, resetAll, activeTour, currentStepIndex } = useDap();
-  const [layoutCount, setLayoutCount] = useState(0);
+const Status = () => {
+  const { status, activeTour, currentStepIndex } = useTour();
+  return (
+    <Text testID="status" style={styles.status}>
+      {activeTour ? `"${activeTour.id}" · step ${currentStepIndex + 1} · ${status}` : 'No tour running'}
+    </Text>
+  );
+};
+
+const ROWS = Array.from({ length: 30 }, (_, i) => i + 1);
+
+const HomeScreen = () => {
+  const { startTour, resetAll } = useTour();
+  const listRef = useRef<FlatList<number>>(null);
+
+  const header = (
+    <View style={styles.controls}>
+      <Status />
+      <View style={styles.row}>
+        <TourTarget name="open-details">
+          <Button testID="open-details" label="Open details" onPress={() => navigationRef.navigate('Details')} />
+        </TourTarget>
+        <TourTarget name="start-cross">
+          <Button testID="start-cross" label="Cross-screen tour" onPress={() => startTour('cross', { force: true })} />
+        </TourTarget>
+      </View>
+      <View style={styles.row}>
+        <TourTarget name="start-scroll">
+          <Button testID="start-scroll" label="Auto-scroll tour" onPress={() => startTour('scroll', { force: true })} />
+        </TourTarget>
+        <TourTarget name="start-broken">
+          <Button testID="start-broken" label="Missing target" onPress={() => startTour('broken', { force: true })} />
+        </TourTarget>
+      </View>
+      <Button testID="reset" label="Reset all tours" onPress={resetAll} />
+    </View>
+  );
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <View style={styles.header}>
-        <DapTarget name="title">
-          <Text style={styles.title}>rn-smart-tour</Text>
-        </DapTarget>
-        <DapTarget name="help">
-          <Button testID="help" label="Help" onPress={() => startTour('welcome', { force: true })} />
-        </DapTarget>
-      </View>
-
-      <Text testID="status" style={styles.status}>
-        {activeTour ? `Tour "${activeTour.id}" · step ${currentStepIndex + 1}` : 'No tour running'}
-      </Text>
-
-      <DapScrollView contentContainerStyle={styles.content}>
-        <DapTarget name="layout-card" onLayout={() => setLayoutCount(c => c + 1)}>
-          <View style={styles.card}>
-            <Text style={styles.cardText}>Target with its own onLayout (fired {layoutCount}×)</Text>
-          </View>
-        </DapTarget>
-
-        <View style={styles.row}>
-          <DapTarget name="start-scroll">
-            <Button testID="start-scroll" label="Auto-scroll tour" onPress={() => startTour('scroll', { force: true })} />
-          </DapTarget>
-          <DapTarget name="start-broken">
-            <Button testID="start-broken" label="Missing-target tour" onPress={() => startTour('broken', { force: true })} />
-          </DapTarget>
+    <NavigationTourScope>
+      <View style={styles.screen}>
+        <View style={styles.header}>
+          <TourTarget name="title">
+            <Text style={styles.title}>Home</Text>
+          </TourTarget>
+          <TourTarget name="help">
+            <Button testID="help" label="Help" onPress={() => startTour('welcome', { force: true })} />
+          </TourTarget>
         </View>
-        <Button testID="reset" label="Reset all tours" onPress={resetAll} />
+        <TourScrollable scrollRef={listRef}>
+          <FlatList
+            ref={listRef}
+            data={ROWS}
+            keyExtractor={item => String(item)}
+            ListHeaderComponent={header}
+            contentContainerStyle={styles.content}
+            renderItem={({ item }) =>
+              item === 25 ? (
+                <TourTarget name="row-25">
+                  <View style={[styles.rowCard, styles.highlightRow]}>
+                    <Text>Row {item} (tour target)</Text>
+                  </View>
+                </TourTarget>
+              ) : (
+                <View style={styles.rowCard}>
+                  <Text>Row {item}</Text>
+                </View>
+              )
+            }
+          />
+        </TourScrollable>
+      </View>
+    </NavigationTourScope>
+  );
+};
 
-        {Array.from({ length: 12 }, (_, i) => (
-          <View key={i} style={styles.filler}>
-            <Text style={styles.cardText}>Filler row {i + 1}</Text>
+const DetailsScreen = () => {
+  const { startTour } = useTour();
+  return (
+    <NavigationTourScope>
+      <View style={[styles.screen, styles.content]}>
+        <View style={styles.header}>
+          {/* Same name as Home's title: only the focused screen's one is used. */}
+          <TourTarget name="title">
+            <Text style={styles.title}>Details</Text>
+          </TourTarget>
+        </View>
+        <Status />
+        <TourTarget name="details-card">
+          <View style={styles.card}>
+            <Text>A card on the second screen.</Text>
           </View>
-        ))}
-
-        <DapTarget name="deep-target">
-          <View style={[styles.card, styles.deepCard]}>
-            <Text style={styles.cardText}>Target below the fold</Text>
-          </View>
-        </DapTarget>
-      </DapScrollView>
-    </SafeAreaView>
+        </TourTarget>
+        <Button testID="title-tour" label='Highlight "title"' onPress={() => startTour('titleOnly', { force: true })} />
+      </View>
+    </NavigationTourScope>
   );
 };
 
@@ -102,18 +186,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      {/* Inline adapter on purpose: the provider must not reload storage on every render. */}
-      <DapProvider
-        tours={TOURS}
-        missingTargetTimeoutMs={2000}
-        storageAdapter={{
-          getItem: key => memory[key] ?? null,
-          setItem: (key, value) => {
-            memory[key] = value;
-          },
-        } satisfies StorageAdapter}>
-        <Home />
-      </DapProvider>
+      <TourProvider tours={TOURS} storageAdapter={storage} missingTargetTimeoutMs={2000}>
+        <NavigationContainer ref={navigationRef}>
+          <Stack.Navigator>
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Details" component={DetailsScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+        <QaDriver openDetails={() => navigationRef.navigate('Details')} />
+      </TourProvider>
     </SafeAreaProvider>
   );
 }
@@ -128,14 +209,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   title: { fontSize: 22, fontWeight: '700', color: '#1b1f24' },
-  status: { paddingHorizontal: 16, paddingBottom: 8, color: '#57606a' },
+  status: { paddingBottom: 4, color: '#57606a' },
+  controls: { gap: 12, paddingBottom: 12 },
   content: { padding: 16, gap: 12 },
   row: { flexDirection: 'row', gap: 12 },
   button: { backgroundColor: '#0a66c2', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
   pressed: { opacity: 0.7 },
   buttonText: { color: '#fff', fontWeight: '600' },
-  card: { backgroundColor: '#fff', padding: 16, borderRadius: 10 },
-  deepCard: { borderWidth: 2, borderColor: '#0a66c2' },
-  cardText: { color: '#1b1f24' },
-  filler: { backgroundColor: '#e7e9ec', padding: 24, borderRadius: 10 },
+  card: { backgroundColor: '#fff', padding: 24, borderRadius: 10 },
+  rowCard: { backgroundColor: '#e7e9ec', padding: 20, borderRadius: 10 },
+  highlightRow: { borderWidth: 2, borderColor: '#0a66c2', backgroundColor: '#fff' },
 });

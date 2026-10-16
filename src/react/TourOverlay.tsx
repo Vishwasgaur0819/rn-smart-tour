@@ -1,7 +1,8 @@
-import { useContext } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { Animated, View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
 import type { ViewStyle } from 'react-native';
-import { DapContext } from './DapContext';
+import type { PresentedStep, TourEngineState } from '../core/TourEngine';
+import { useTourEngine, useTourState } from './hooks';
 
 /** Gap (pts) between the target highlight and the tooltip card. */
 const TOOLTIP_GAP = 10;
@@ -16,24 +17,46 @@ const VERTICAL_CENTER_OFFSET = 60;
 /** Min screen space reserved at the bottom when centering vertically. */
 const VERTICAL_SAFE_BOTTOM = 120;
 
-export const DapOverlay = () => {
-  const context = useContext(DapContext);
+const selectOverlay = (state: TourEngineState) => ({
+  presented: state.presented,
+  // False while the next step's target is still being measured (the previous step stays drawn).
+  isSettled:
+    !!state.presented &&
+    state.presented.tourId === state.tourId &&
+    state.presented.stepIndex === state.stepIndex,
+});
+
+/** Fade-in duration (ms) when the overlay appears. Hiding is instant. */
+const FADE_IN_MS = 200;
+
+export const TourOverlay = () => {
+  const { presented, isSettled } = useTourState(selectOverlay);
+  return presented ? <OverlayContent presented={presented} isSettled={isSettled} /> : null;
+};
+
+const OverlayContent = ({ presented, isSettled }: { presented: PresentedStep; isSettled: boolean }) => {
+  const engine = useTourEngine();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-  if (!context || !context.activeTour) return null;
+  // Fades in when the overlay appears; moving between steps does not fade again.
+  // Not using Modal's animationType: its fade-out would leave the old step drawn over
+  // a screen that is already navigating away.
+  const opacity = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(opacity, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }).start();
+  }, [opacity]);
 
-  const { activeTour, currentStepIndex, targets, nextStep, prevStep, stopTour } = context;
-  const currentStep = activeTour.steps[currentStepIndex];
+  const activeTour = engine.getTour(presented.tourId);
+  const currentStepIndex = presented.stepIndex;
+  const currentStep = activeTour?.steps[currentStepIndex];
+  if (!activeTour || !currentStep) return null;
 
-  if (!currentStep) return null;
+  // Ignore taps while moving between steps, so one tap never advances twice.
+  const nextStep = () => isSettled && engine.nextStep();
+  const prevStep = () => isSettled && engine.prevStep();
+  const stopTour = () => engine.stopTour();
 
-  const targetId = currentStep.targetId;
-  const measurement = targets[targetId];
-
-  // If the target hasn't been measured yet, silently wait — don't show debug text in production.
-  if (!measurement) return null;
-
-  const { x, y, width, height } = measurement;
+  const { x, y, width, height } = presented.rect;
 
   const pos = currentStep.position || 'bottom';
 
@@ -87,13 +110,13 @@ export const DapOverlay = () => {
 
   return (
     // onRequestClose: the Android back button dismisses the tour, like "Skip".
-    <Modal transparent visible animationType="fade" onRequestClose={() => stopTour()}>
+    <Modal transparent visible animationType="none" onRequestClose={() => stopTour()}>
       {/*
         Sized explicitly from the window rather than absoluteFill: on the New Architecture the
         Modal's content container does not reliably fill the screen, which hid the bottom
         backdrop and every tooltip positioned with `bottom` (position: 'top').
       */}
-      <View style={[styles.fullscreen, { width: screenWidth, height: screenHeight }]}>
+      <Animated.View style={[styles.fullscreen, { width: screenWidth, height: screenHeight, opacity }]}>
         {/* Top backdrop */}
         <View style={[styles.backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
         {/* Bottom backdrop */}
@@ -133,7 +156,7 @@ export const DapOverlay = () => {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 };

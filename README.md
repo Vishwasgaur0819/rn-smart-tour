@@ -9,14 +9,14 @@
 
 ## ✨ Features
 
-- 🎯 **Multi-Pass Measurement**: Native `measureInWindow` API with self-correcting strategy for animation resilience.
-- 📱 **Rotation & Resize Aware**: Targets re-measure automatically on orientation change or split-screen.
-- ⚡ **Auto-Start Engine**: Trigger tours instantly on mount with a smart debounce for layout stability.
+- 🎯 **Measured When Shown**: Targets are measured when their step starts, after scrolling into view and once they stop moving, so the highlight matches what's on screen.
+- 🧭 **Navigation Aware**: Screens kept mounted in the background are never highlighted, and steps wait for screen transitions to finish (React Navigation integration included).
+- 🔀 **Tours Across Screens**: A step can navigate to another screen before it is shown.
+- 📜 **Auto-Scroll**: Works with `ScrollView`, `FlatList` and `SectionList`; each target scrolls its own nearest list.
+- ⚡ **No Re-Render Cost**: Mounting and measuring targets re-renders nothing; components subscribe only to the tour state they use.
 - 💾 **Seen State Caching**: Persistent "only-once" logic with pluggable storage (AsyncStorage, MMKV, etc.).
-- 🎨 **Smart Overlays**: Dynamic cutouts with Back/Next/Skip navigation and step indicators.
-- 📜 **Auto-Scroll Support**: Bring tour targets into view with `DapScrollView`; the highlight is re-measured after scrolling.
-- 🛟 **Never Gets Stuck**: If a step's target isn't on screen, the tour ends cleanly instead of leaving an invisible, active tour.
-- 🔁 **Replay on Demand**: `startTour(id, { force: true })`, `resetTour(id)` and `resetAll()` for Help buttons and settings screens.
+- 🛟 **Never Gets Stuck**: If a step's target isn't on screen in time, the tour ends (or skips the step) instead of leaving an invisible, active tour.
+- 🔁 **Replay on Demand**: `startTour(id, { force: true })`, `resetTour(id)` and `resetAll()`, from components or from outside React.
 
 ---
 
@@ -26,23 +26,22 @@
 npm install rn-smart-tour
 ```
 
-Requires React 17+ and React Native 0.65+. No native code, so no `pod install` or rebuild is needed.
-
-Unit-tested against React Native 0.73 (React 18), and checked in the example app on React Native 0.88 (React 19, New Architecture) on iOS.
+Requires React 18+ and React Native 0.73+. No native code, so no `pod install` or rebuild is needed. React Navigation (6+) is optional.
 
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Wrap your App
-Wrap your root component in the `DapProvider` and define your tours.
+Wrap your root component in `TourProvider` and define your tours.
 
 ```tsx
-import { DapProvider } from 'rn-smart-tour';
+import { TourProvider } from 'rn-smart-tour';
 
 const TOURS = {
   'welcome-tour': {
     id: 'welcome-tour',
+    autoStart: true,
     steps: [{
       targetId: 'save-btn',
       title: 'Welcome!',
@@ -53,59 +52,107 @@ const TOURS = {
 
 export default function App() {
   return (
-    <DapProvider tours={TOURS}>
+    <TourProvider tours={TOURS}>
       <MainApp />
-    </DapProvider>
+    </TourProvider>
   );
 }
 ```
 
-### 2. Mark your Target
-Wrap any view or button you want to highlight with `DapTarget`.
+### 2. Mark your Targets
+Wrap any view or button you want to highlight with `TourTarget`.
 
 ```tsx
-import { DapTarget } from 'rn-smart-tour';
+import { TourTarget } from 'rn-smart-tour';
 
 const MyButton = () => (
-  <DapTarget name="save-btn">
+  <TourTarget name="save-btn">
     <Button title="Save" onPress={...} />
-  </DapTarget>
+  </TourTarget>
 );
 ```
 
 ### 3. Start the Tour
-Set `autoStart: true` on a tour to show it the first time its first target appears, or start it yourself with the `useDap` hook.
+A tour with `autoStart: true` shows the first time its first target appears. Start any tour yourself with `useTour`:
 
 ```tsx
-import { useDap } from 'rn-smart-tour';
+import { useTour } from 'rn-smart-tour';
 
-const { startTour } = useDap();
+const { startTour } = useTour();
 // ...
 // A tour is shown only once. `force: true` replays it, e.g. from a Help button.
 <Button title="Help" onPress={() => startTour('welcome-tour', { force: true })} />
 ```
 
-### 4. Enable Auto-Scroll (Optional)
-If your targets are hidden inside a long list, swap your standard `ScrollView` for `DapScrollView`. The tour will automatically scroll to bring each target into the user's view.
+### 4. Screens (React Navigation)
+Wrap each screen that has targets in `NavigationTourScope`. Its targets then only count while the screen is focused and has finished animating in, so a screen kept mounted in the background is never highlighted.
 
 ```tsx
-import { DapScrollView } from 'rn-smart-tour';
+import { NavigationTourScope } from 'rn-smart-tour/react-navigation';
 
-// ... inside your screen
-<DapScrollView>
-  <DapTarget name="bottom-btn">
-    <Button title="Secret Button" ... />
-  </DapTarget>
-</DapScrollView>
+const OrdersScreen = () => (
+  <NavigationTourScope>
+    {/* screen content with TourTargets */}
+  </NavigationTourScope>
+);
 ```
 
-### 5. Remember Seen Tours (Optional)
+Not using React Navigation? `TourScope` does the same with an `active` prop you control: `<TourScope active={isVisible}>`.
+
+### 5. Lists (Optional)
+To let tours scroll a target into view, use `TourScrollView` instead of `ScrollView`, or wrap a `FlatList` / `SectionList` in `TourScrollable`:
+
+```tsx
+import { TourScrollable, TourTarget } from 'rn-smart-tour';
+
+const listRef = useRef<FlatList>(null);
+
+<TourScrollable scrollRef={listRef}>
+  <FlatList
+    ref={listRef}
+    data={items}
+    renderItem={({ item }) => (
+      <TourTarget name={`item-${item.id}`}>
+        <Row item={item} />
+      </TourTarget>
+    )}
+  />
+</TourScrollable>
+```
+
+A target in a virtualized list can only be scrolled to once its row has rendered.
+
+### 6. Tours Across Screens (Optional)
+`beforeEnter` runs before a step looks for its target, e.g. to open the screen it's on. The step then waits for the target to appear on the focused screen.
+
+```tsx
+import { createNavigationContainerRef } from '@react-navigation/native';
+
+export const navigationRef = createNavigationContainerRef();
+
+const TOURS = {
+  orders: {
+    id: 'orders',
+    steps: [
+      { targetId: 'orders-tab', title: 'Orders', description: 'All your orders live here.' },
+      {
+        targetId: 'new-order',
+        title: 'New order',
+        description: 'Start one from here.',
+        beforeEnter: () => navigationRef.navigate('Orders'),
+      },
+    ],
+  },
+};
+```
+
+### 7. Remember Seen Tours (Optional)
 Without a `storageAdapter`, "seen" state lasts until the app restarts. Pass any storage with `getItem` / `setItem`:
 
 ```tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-<DapProvider tours={TOURS} storageAdapter={AsyncStorage}>
+<TourProvider tours={TOURS} storageAdapter={AsyncStorage}>
 ```
 
 ```tsx
@@ -117,32 +164,47 @@ const mmkvAdapter = {
   setItem: (key: string, value: string) => mmkv.set(key, value),
 };
 
-<DapProvider tours={TOURS} storageAdapter={mmkvAdapter}>
+<TourProvider tours={TOURS} storageAdapter={mmkvAdapter}>
 ```
 
 Storage is read once on mount. Calls to `startTour`, `resetTour` and `resetAll` made before it has loaded are queued and run once it has, so an already-seen tour is never shown by mistake.
+
+### 8. Start Tours from Outside React (Optional)
+For deep links or notification handlers, create a controller and pass it to the provider:
+
+```tsx
+import { createTourController, TourProvider } from 'rn-smart-tour';
+
+export const tours = createTourController({ tours: TOURS, storageAdapter: mmkvAdapter });
+
+<TourProvider controller={tours}>…</TourProvider>
+
+// anywhere:
+tours.startTour('new-feature', { force: true });
+```
 
 ---
 
 ## 🧠 Technical Architecture
 
 <details>
-<summary><b>View How Measurements Work (Click to expand)</b></summary>
+<summary><b>How Measurement Works (Click to expand)</b></summary>
 
-To guarantee accuracy during navigation animations, `rn-smart-tour` uses a **multi-pass strategy**:
+Targets only register a ref. When a step starts:
 
-- **Pass 1 (100ms)**: Fast first estimate.
-- **Pass 2 (500ms)**: Corrects after most screen transitions finish.
-- **Pass 3 (1000ms)**: Final safety net for slow async layout shifts.
+1. `beforeEnter` runs, if the step has one, and is awaited.
+2. The engine waits for the target to be mounted inside an active scope.
+3. If the target is in a `TourScrollable` and not fully visible, the list scrolls it to the middle.
+4. The target is measured every frame until its position holds steady for 3 frames, then the step is shown.
 
-Measurements only trigger a re-render if the position changes by more than **1pt (threshold)**.
+While a step is shown, its target is measured again when its layout changes, the window resizes, the keyboard opens or closes, or the app returns to the foreground. Positions that change by **1pt** or less are ignored.
 
 </details>
 
 <details>
 <summary><b>Auto-Start & Debounce Settings</b></summary>
 
-When `autoStart: true` is enabled, the overlay waits **300ms** after registration. This allows the multi-pass system to settle on the final coordinates before the hole is cut into the backdrop.
+When `autoStart: true` is enabled, the tour starts **300ms** after its first target is registered in an active scope, so the rest of the screen can mount first.
 
 A tour that is stopped (finished, skipped, or ended because a target was missing) is not auto-started again in the same app session. `startTour` still works, and `resetTour` makes it eligible again.
 
@@ -152,8 +214,9 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 <summary><b>Tour Lifecycle Rules</b></summary>
 
 - **Skip**, **Finish** and the **Android back button** end the tour and mark it as seen.
-- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**), the tour ends **without** being marked as seen, and a warning is logged in development.
-- When a step becomes active, its target is scrolled into view (inside a `DapScrollView`) and measured again, so the highlight matches where it is now.
+- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**, or the step's `targetTimeoutMs`), the tour ends **without** being marked as seen, or moves to the next step with `onMissingTarget: 'skip'`. A warning is logged in development.
+- If the target of the step being shown disappears (unmounts, or its screen loses focus), the step is hidden until it comes back, within the same timeout.
+- While moving to the next step, the current one stays on screen until the next target is measured, and extra taps on **Next** are ignored.
 
 </details>
 
@@ -161,53 +224,77 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 
 ## 🛠 API Reference
 
-### DapProvider
+### TourProvider
 | Property | Type | Default | Description |
 |:---|:---|:---|:---|
 | `tours` | `Record<string, Tour>` | — | All tours, keyed by id. |
 | `storageAdapter` | `StorageAdapter` | — | Persists seen tours (AsyncStorage, MMKV, …). Read once on mount. |
-| `missingTargetTimeoutMs` | `number` | `3000` | How long a step waits for its target before the tour ends. |
+| `missingTargetTimeoutMs` | `number` | `3000` | How long a step waits for its target. |
+| `controller` | `TourController` | — | From `createTourController`, instead of `tours` / `storageAdapter`. |
 
 ### Tour Configuration
 | Property | Type | Description |
 |:---|:---|:---|
 | `id` | `string` | Unique identifier for caching. |
-| `autoStart` | `boolean` | Trigger as soon as the first target mounts. |
+| `autoStart` | `boolean` | Start the first time the first step's target appears. |
 | `steps` | `TourStep[]` | Sequence of highlight steps. |
-
-### DapScrollView
-A direct drop-in replacement for the React Native `ScrollView`. Supports all standard props, and a `ref` is forwarded to the inner `ScrollView`.
-| Property | Type | Description |
-|:---|:---|:---|
-| `children` | `React.Node` | Components to scroll. |
-| `...props` | `ScrollViewProps` | Standard props are forwarded to the native ScrollView. |
-
-### DapTarget
-| Property | Type | Description |
-|:---|:---|:---|
-| `name` | `string` | Unique identifier that matches a `targetId` in a tour step. |
-| `children` | `ReactElement` | The UI element to wrap and highlight. |
-| `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
 
 ### TourStep
 | Property | Type | Default | Description |
 |:---|:---|:---|:---|
-| `targetId` | `string` | — | Matches the `name` prop in `<DapTarget>`. |
+| `targetId` | `string` | — | Matches the `name` prop of a `<TourTarget>`. |
 | `title` | `string` | — | Tooltip header. |
 | `description` | `string` | — | Tooltip body. |
 | `position` | `string` | `'bottom'` | `top`, `bottom`, `left`, `right`. |
+| `beforeEnter` | `() => void \| Promise<void>` | — | Runs (and is awaited) before the step looks for its target. |
+| `onMissingTarget` | `'end' \| 'skip'` | `'end'` | What happens if the target isn't found in time. |
+| `targetTimeoutMs` | `number` | provider's | Per-step override of `missingTargetTimeoutMs`. |
 
-### `useDap()` Hook
-| Method | Description |
+### TourTarget
+| Property | Type | Description |
+|:---|:---|:---|
+| `name` | `string` | Matches a `targetId` in a tour step. |
+| `children` | `ReactNode` | The UI element to wrap and highlight. |
+| `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
+
+### TourScope / NavigationTourScope
+| Component | Props | Description |
+|:---|:---|:---|
+| `TourScope` | `active?: boolean` (default `true`) | Targets inside only count while `active` (and every parent scope is active). |
+| `NavigationTourScope` | — | From `rn-smart-tour/react-navigation`. Active while the screen is focused and not animating. |
+
+### TourScrollable / TourScrollView
+| Component | Props | Description |
+|:---|:---|:---|
+| `TourScrollable` | `scrollRef`, `horizontal?` | Lets tours scroll targets inside the referenced `ScrollView` / `FlatList` / `SectionList`. |
+| `TourScrollView` | `ScrollViewProps` | A `ScrollView` already wrapped in `TourScrollable`. A `ref` is forwarded. |
+
+### `useTour()` Hook
+| Member | Description |
 |:---|:---|
 | `startTour(id, options?)` | Start a tour by ID. Does nothing if it was already seen, unless `{ force: true }`. |
 | `stopTour(markAsSeen?)`| End tour. Pass `false` to keep it unread. |
 | `nextStep()` / `prevStep()` | Manual step navigation. |
 | `resetTour(id)` | Mark a tour as unseen so it can show (and auto-start) again. |
 | `resetAll()` | Mark every tour as unseen. |
+| `status` | `'idle'`, `'waiting'` (looking for the step's target) or `'active'`. |
 | `activeTour` | Current active tour object. |
 | `currentStepIndex` | Current step number (0-indexed). |
 | `seenTours` | `Record<string, boolean>` of tours already seen. |
+
+`useTourState(selector)` subscribes to any slice of the tour state and re-renders only when it changes.
+
+---
+
+## ⬆️ Upgrading from 1.x
+
+The 1.x names still work and are deprecated: `DapProvider` → `TourProvider`, `DapTarget` → `TourTarget`, `DapScrollView` → `TourScrollView`, `useDap` → `useTour`. Seen tours stored by 1.x are kept.
+
+Behaviour changes:
+- React ≥ 18 and React Native ≥ 0.73 are required.
+- A step appears a few frames after it starts (once its target has stopped moving), not immediately.
+- `useDap().targets` only contains the measurement of the step being shown, and `requestScroll` does nothing; scrolling is automatic.
+- Wrap screens in `NavigationTourScope` (or `TourScope`) to stop targets on background screens from being used.
 
 ---
 
@@ -221,7 +308,7 @@ npm run typecheck && npm run lint && npm test   # what CI runs
 npm run build                                    # outputs lib/ (CommonJS, ES modules, types)
 ```
 
-The `example/` app loads the library straight from `src/`, so changes show up without a build:
+The `example/` app (React Native 0.88, React Navigation) loads the library straight from `src/`, so changes show up without a build:
 
 ```sh
 cd example && npm install

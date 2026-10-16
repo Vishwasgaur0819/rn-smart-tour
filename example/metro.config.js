@@ -6,7 +6,7 @@ const escape = s => s.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
 
 // The library's own devDependencies include older react / react-native copies.
 // Block them so every import resolves to this app's single copy.
-const singletons = ['react', 'react-native', '@babel/runtime'];
+const singletons = ['react', 'react-native', '@babel/runtime', '@react-navigation/native'];
 
 /**
  * Metro configuration for the example app. `rn-smart-tour` resolves to the
@@ -22,6 +22,9 @@ const config = {
     resolveRequest: (context, moduleName, platform) => {
       if (moduleName === 'rn-smart-tour') {
         return { type: 'sourceFile', filePath: path.join(root, 'src', 'index.ts') };
+      }
+      if (moduleName === 'rn-smart-tour/react-navigation') {
+        return { type: 'sourceFile', filePath: path.join(root, 'src', 'react-navigation.tsx') };
       }
       return context.resolveRequest(context, moduleName, platform);
     },
