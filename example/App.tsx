@@ -14,7 +14,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TourProvider, TourScrollable, TourTarget, useTour } from 'rn-smart-tour';
 import type { StorageAdapter, Tour } from 'rn-smart-tour';
 import { NavigationTourScope } from 'rn-smart-tour/react-navigation';
-import { QaDriver } from './QaDriver';
 
 type RootStack = { Home: undefined; Details: undefined };
 const Stack = createNativeStackNavigator<RootStack>();
@@ -193,7 +192,6 @@ export default function App() {
             <Stack.Screen name="Details" component={DetailsScreen} />
           </Stack.Navigator>
         </NavigationContainer>
-        <QaDriver openDetails={() => navigationRef.navigate('Details')} />
       </TourProvider>
     </SafeAreaProvider>
   );
