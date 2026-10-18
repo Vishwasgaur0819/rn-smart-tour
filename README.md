@@ -262,6 +262,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `renderTooltip` | `(props: TourTooltipProps) => ReactNode` | built-in card | Draws the tooltip card. Receives the step, its index and count, and `next` / `prev` / `skip`. |
 | `tooltipWidth` | `number` | `280` | Card width (capped to the screen). |
 | `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
+| `supportedOrientations` | `ModalProps['supportedOrientations']` | all | iOS orientations the overlay allows (still limited by Info.plist). |
 
 ### Tour Configuration
 | Property | Type | Description |
@@ -337,6 +338,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 npm install
 npm run typecheck && npm run lint && npm test   # what CI runs
 npm run build                                    # outputs lib/ (CommonJS, ES modules, types)
+npm publish --tag next                           # prereleases (betas); `npm publish` for stable versions
 ```
 
 The `example/` app (React Native 0.88, React Navigation) loads the library straight from `src/`, so changes show up without a build:

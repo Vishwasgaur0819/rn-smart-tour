@@ -1,6 +1,6 @@
 {
   "name": "rn-smart-tour",
-  "version": "2.0.0-beta.1",
+  "version": "2.0.0-beta.2",
   "description": "Product tours, guided walkthroughs and onboarding overlays for React Native.",
   "author": "Vishwas Gaur",
   "license": "MIT",
@@ -68,7 +68,7 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "jest --no-watchman",
     "prepack": "bob build",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm test"
+    "prepublishOnly": "node scripts/check-publish-tag.js && npm run typecheck && npm run lint && npm test"
   },
   "peerDependencies": {
     "@react-navigation/native": ">=6.0.0",

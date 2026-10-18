@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.2 — 2026-10-19
+
+### Fixed
+- iOS: in apps that only allow landscape (or only some orientations), showing a tour raised "Modal was presented with 0x2 orientation mask but the application only supports 0x18". The overlay's Modal used React Native's default of portrait only; it now allows every orientation, and iOS limits it to the app's Info.plist.
+
+### Added
+- `supportedOrientations` on `TourProvider`, to give the overlay the same orientations as the app's other modals.
+
+### Tooling
+- `npm publish` refuses to publish a prerelease unless `--tag next` is passed (and a stable version with `--tag next`). npm 10 ignores `publishConfig.tag`, which would have put a beta on `latest`.
+
 ## 2.0.0-beta.1 — 2026-10-18
 
 ### Added

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
-import type { LayoutChangeEvent } from 'react-native';
+import type { LayoutChangeEvent, ModalProps } from 'react-native';
 import type { PresentedStep, TourEngineState } from '../core/TourEngine';
 import type { TourTooltipProps } from '../types';
 import { useTourEngine, useTourState } from './hooks';
@@ -8,6 +8,18 @@ import { placeTooltip } from './placement';
 
 const DEFAULT_TOOLTIP_WIDTH = 280;
 const DEFAULT_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.6)';
+/**
+ * Every orientation, so the overlay never conflicts with the app's own. iOS still
+ * limits a Modal to the orientations in Info.plist; React Native's default
+ * (['portrait']) made iOS throw in landscape-only apps.
+ */
+const ALL_ORIENTATIONS: NonNullable<ModalProps['supportedOrientations']> = [
+  'portrait',
+  'portrait-upside-down',
+  'landscape',
+  'landscape-left',
+  'landscape-right',
+];
 /** Fade-in duration (ms) when the overlay appears. Hiding is instant. */
 const FADE_IN_MS = 200;
 
@@ -21,6 +33,11 @@ export interface TourOverlayProps {
   tooltipWidth?: number;
   /** Color of the dimmed area around the target. Default: 'rgba(0, 0, 0, 0.6)'. */
   backdropColor?: string;
+  /**
+   * iOS orientations the overlay's Modal allows. Default: all of them (iOS then
+   * limits it to the app's Info.plist). Pass your app's own list to match its modals.
+   */
+  supportedOrientations?: ModalProps['supportedOrientations'];
 }
 
 const selectOverlay = (state: TourEngineState) => ({
@@ -43,6 +60,7 @@ const OverlayContent = ({
   renderTooltip,
   tooltipWidth = DEFAULT_TOOLTIP_WIDTH,
   backdropColor = DEFAULT_BACKDROP_COLOR,
+  supportedOrientations = ALL_ORIENTATIONS,
 }: TourOverlayProps & { presented: PresentedStep; isSettled: boolean }) => {
   const engine = useTourEngine();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -82,7 +100,12 @@ const OverlayContent = ({
 
   return (
     // onRequestClose: the Android back button dismisses the tour, like "Skip".
-    <Modal transparent visible animationType="none" onRequestClose={() => engine.stopTour()}>
+    <Modal
+      transparent
+      visible
+      animationType="none"
+      supportedOrientations={supportedOrientations}
+      onRequestClose={() => engine.stopTour()}>
       {/*
         Sized explicitly from the window rather than absoluteFill: on the New Architecture the
         Modal's content container does not reliably fill the screen, which hid the bottom

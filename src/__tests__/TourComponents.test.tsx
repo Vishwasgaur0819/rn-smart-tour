@@ -220,6 +220,41 @@ describe('Overlay', () => {
 });
 
 describe('Overlay visibility', () => {
+  it('allows every orientation by default, so landscape-only apps do not crash on iOS', async () => {
+    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
+    render(
+      <TourProvider tours={TOURS}>
+        <TourTarget name="save">
+          <Text>Save</Text>
+        </TourTarget>
+        <Probe />
+      </TourProvider>,
+    );
+    act(() => api.startTour('t'));
+    await advance(200);
+    expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual(
+      expect.arrayContaining(['portrait', 'landscape', 'landscape-left', 'landscape-right']),
+    );
+  });
+
+  it("uses the app's own orientations when given", async () => {
+    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
+    render(
+      <TourProvider tours={TOURS} supportedOrientations={['landscape-left', 'landscape-right']}>
+        <TourTarget name="save">
+          <Text>Save</Text>
+        </TourTarget>
+        <Probe />
+      </TourProvider>,
+    );
+    act(() => api.startTour('t'));
+    await advance(200);
+    expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual([
+      'landscape-left',
+      'landscape-right',
+    ]);
+  });
+
   it('disappears instantly (no Modal fade-out) so an old step is never drawn over a screen that is leaving', async () => {
     mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
     render(
