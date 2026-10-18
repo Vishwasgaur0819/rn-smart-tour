@@ -1,12 +1,12 @@
 {
   "name": "rn-smart-tour",
-  "version": "1.1.0",
+  "version": "2.0.0-beta.1",
   "description": "Product tours, guided walkthroughs and onboarding overlays for React Native.",
   "author": "Vishwas Gaur",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Vishwasgaur0819/rn-smart-tour.git"
+    "url": "git+https://github.com/Vishwasgaur0819/rn-smart-tour.git"
   },
   "bugs": {
     "url": "https://github.com/Vishwasgaur0819/rn-smart-tour/issues"
@@ -27,11 +27,22 @@
         "default": "./lib/commonjs/index.js"
       }
     },
+    "./react-navigation": {
+      "import": {
+        "types": "./lib/typescript/module/src/react-navigation.d.ts",
+        "default": "./lib/module/react-navigation.js"
+      },
+      "require": {
+        "types": "./lib/typescript/commonjs/src/react-navigation.d.ts",
+        "default": "./lib/commonjs/react-navigation.js"
+      }
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "lib",
+    "react-navigation",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__"
@@ -60,13 +71,20 @@
     "prepublishOnly": "npm run typecheck && npm run lint && npm test"
   },
   "peerDependencies": {
-    "react": ">=17.0.0",
-    "react-native": ">=0.65.0"
+    "@react-navigation/native": ">=6.0.0",
+    "react": ">=18.0.0",
+    "react-native": ">=0.73.0"
+  },
+  "peerDependenciesMeta": {
+    "@react-navigation/native": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
     "@react-native/babel-preset": "^0.73.21",
     "@react-native/eslint-config": "^0.73.2",
+    "@react-navigation/native": "^7.5.1",
     "@testing-library/react-native": "^12.9.0",
     "@types/jest": "^29.5.14",
     "@types/react": "^18.2.0",
@@ -84,7 +102,8 @@
     "modulePathIgnorePatterns": [
       "<rootDir>/lib/",
       "<rootDir>/example/"
-    ]
+    ],
+    "testTimeout": 15000
   },
   "react-native-builder-bob": {
     "source": "src",
@@ -115,6 +134,6 @@
   },
   "publishConfig": {
     "access": "public",
-    "provenance": true
+    "tag": "next"
   }
 }

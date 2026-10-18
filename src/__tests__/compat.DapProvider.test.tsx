@@ -1,8 +1,7 @@
 import { useEffect } from 'react';
 import { Modal, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { act, render, screen } from '@testing-library/react-native';
-import { DapProvider } from '../DapProvider';
-import { useDap } from '../useDap';
+import { DapProvider, useDap } from '../compat';
 import type { DapContextType, StorageAdapter, TargetMeasurement, Tour } from '../types';
 
 const MEASUREMENT: TargetMeasurement = { x: 10, y: 20, width: 100, height: 40 };
@@ -56,7 +55,7 @@ const memoryStorage = (initial: Record<string, boolean> = {}) => {
 
 const flush = async (ms = 0) => {
   await act(async () => {
-    jest.advanceTimersByTime(ms);
+    await jest.advanceTimersByTimeAsync(ms);
   });
 };
 
@@ -79,7 +78,7 @@ describe('DapProvider', () => {
       </DapProvider>,
     );
     expect(ctx.activeTour).toBeNull();
-    await flush(300);
+    await flush(400);
     expect(ctx.activeTour?.id).toBe('intro');
     expect(screen.getByText('Step A')).toBeTruthy();
   });
@@ -92,7 +91,7 @@ describe('DapProvider', () => {
         <Probe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     expect(ctx.activeTour?.id).toBe('intro');
 
     act(() => ctx.nextStep()); // step B's target is not mounted
@@ -116,7 +115,7 @@ describe('DapProvider', () => {
         <Probe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     act(() => {
       ctx.nextStep();
       ctx.nextStep(); // same tick: previously both read index 0
@@ -133,7 +132,7 @@ describe('DapProvider', () => {
         <Probe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     act(() => {
       ctx.nextStep();
       ctx.prevStep();
@@ -170,11 +169,11 @@ describe('DapProvider', () => {
         <Probe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     expect(ctx.activeTour).toBeNull();
 
     act(() => ctx.resetTour('intro'));
-    await flush(300);
+    await flush(400);
     expect(ctx.activeTour?.id).toBe('intro');
     expect(JSON.parse(data['@rn-dap:seen_tours'])).toEqual({});
   });
@@ -258,7 +257,7 @@ describe('DapProvider', () => {
         </DapProvider>,
       );
       await flush(); // storage load resolves
-      await flush(300); // auto-start debounce
+      await flush(400); // auto-start debounce, then measuring the target
       expect(error).toHaveBeenCalled();
       expect(ctx.activeTour?.id).toBe('intro');
     });
@@ -299,7 +298,7 @@ describe('DapProvider', () => {
         <WindowProbe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     const container = screen.UNSAFE_getByType(Modal).findAllByType(View)[0];
     expect(StyleSheet.flatten(container.props.style)).toMatchObject({
       width: window.width,
@@ -315,7 +314,7 @@ describe('DapProvider', () => {
         <Probe />
       </DapProvider>,
     );
-    await flush(300);
+    await flush(400);
     const modal = screen.UNSAFE_getByType(Modal);
     act(() => modal.props.onRequestClose());
     expect(ctx.activeTour).toBeNull();

@@ -2,6 +2,42 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.1 — 2026-10-18
+
+### Added
+- `renderTooltip` on `TourProvider`: draw the tooltip card with your own components and theme. It receives `TourTooltipProps` (the step, its index and count, `isFirstStep` / `isLastStep`, and `next` / `prev` / `skip`). The built-in card is exported as `DefaultTooltip`.
+- `tooltipWidth` and `backdropColor` on `TourProvider`.
+
+### Changed
+- The card is placed using its measured height: below the target by default (above for `position: 'top'`), flipping to the other side when it doesn't fit, and kept on screen. `'left'` / `'right'` fall back to below/above when there's no room beside the target (they used to get a negative width). The card stays invisible until measured, so it never jumps into place.
+
+## 2.0.0-beta.0 — 2026-10-16
+
+Published under the `next` tag: `npm install rn-smart-tour@next`. `latest` stays on 1.1.0 until 2.0.0 is stable.
+
+Checked on device: iOS and Android with React Native 0.88 (New Architecture, React 19), and iOS with React Native 0.81 on the old architecture, using React Navigation 7 (native-stack) and a FlatList. Unit tests run against React Native 0.73 (React 18).
+
+### New core
+- Targets register a ref only. A target is measured when its step becomes current: it is scrolled into view if needed, then measured every frame until it stops moving, and only then shown. While shown, it is re-measured when its layout changes, the window resizes, the keyboard opens or closes, or the app returns to the foreground.
+- Tour state lives in a small external store read with `useSyncExternalStore`. Mounting, moving or measuring targets no longer re-renders `TourTarget`s or components using `useTour`.
+- Moving between steps keeps the current step on screen until the next one is measured (no flicker), and taps on "Next" during that time are ignored.
+- The overlay fades in and disappears instantly. (The Modal's own fade-out used to leave the previous step drawn over a screen that was navigating away.)
+
+### Added
+- New names: `TourProvider`, `TourTarget`, `TourScrollView`, `useTour`.
+- `TourScope`: targets only count while their scope is active, so screens kept mounted in the background are never highlighted.
+- `rn-smart-tour/react-navigation` → `NavigationTourScope`: a scope that is active while its screen is focused and not animating. `@react-navigation/native` (≥ 6) is an optional peer dependency.
+- `TourScrollable`: auto-scroll for any scroll container (`ScrollView`, `FlatList`, `SectionList`); each target uses its nearest one, so several lists and nested screens work.
+- Step options: `beforeEnter` (e.g. navigate to the screen with the target; awaited), `onMissingTarget: 'end' | 'skip'`, `targetTimeoutMs`.
+- `useTour().status` (`'idle' | 'waiting' | 'active'`) and `useTourState(selector)` for components that need specific state.
+- A development warning when several on-screen targets share a name.
+
+### Changed (breaking)
+- Peer dependencies: React ≥ 18, React Native ≥ 0.73.
+- A step appears a few frames after it starts (once its target has stopped moving) rather than immediately.
+- `useDap().targets` only contains the measurement of the step being shown. `requestScroll`, `_registerScrollRef` and `_unregisterScrollRef` do nothing; scrolling is automatic.
+- `DapProvider`, `DapTarget`, `DapScrollView` and `useDap` still work but are deprecated.
+
 ## 1.1.0 — 2026-10-16
 
 ### Added

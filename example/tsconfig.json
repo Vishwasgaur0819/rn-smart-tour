@@ -2,7 +2,9 @@
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
     "paths": {
-      "rn-smart-tour": ["../src/index.ts"]
+      "rn-smart-tour": ["../src/index.ts"],
+      "rn-smart-tour/react-navigation": ["../src/react-navigation.tsx"],
+      "@react-navigation/native": ["./node_modules/@react-navigation/native"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],
