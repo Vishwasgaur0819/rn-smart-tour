@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.1 — 2026-10-18
+
+### Added
+- `renderTooltip` on `TourProvider`: draw the tooltip card with your own components and theme. It receives `TourTooltipProps` (the step, its index and count, `isFirstStep` / `isLastStep`, and `next` / `prev` / `skip`). The built-in card is exported as `DefaultTooltip`.
+- `tooltipWidth` and `backdropColor` on `TourProvider`.
+
+### Changed
+- The card is placed using its measured height: below the target by default (above for `position: 'top'`), flipping to the other side when it doesn't fit, and kept on screen. `'left'` / `'right'` fall back to below/above when there's no room beside the target (they used to get a negative width). The card stays invisible until measured, so it never jumps into place.
+
 ## 2.0.0-beta.0 — 2026-10-16
 
 Published under the `next` tag: `npm install rn-smart-tour@next`. `latest` stays on 1.1.0 until 2.0.0 is stable.

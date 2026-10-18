@@ -1,21 +1,27 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
-import type { ViewStyle } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
 import type { PresentedStep, TourEngineState } from '../core/TourEngine';
+import type { TourTooltipProps } from '../types';
 import { useTourEngine, useTourState } from './hooks';
+import { placeTooltip } from './placement';
 
-/** Gap (pts) between the target highlight and the tooltip card. */
-const TOOLTIP_GAP = 10;
-/** Max width of the tooltip card. */
-const TOOLTIP_WIDTH = 280;
-/** General padding from screen edges. */
-const EDGE_PADDING = 16;
-/** Rough estimated tooltip height — used for bottom-overflow checks. */
-const ESTIMATED_TOOLTIP_HEIGHT = 150;
-/** Rough vertical offset for left/right centering. */
-const VERTICAL_CENTER_OFFSET = 60;
-/** Min screen space reserved at the bottom when centering vertically. */
-const VERTICAL_SAFE_BOTTOM = 120;
+const DEFAULT_TOOLTIP_WIDTH = 280;
+const DEFAULT_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.6)';
+/** Fade-in duration (ms) when the overlay appears. Hiding is instant. */
+const FADE_IN_MS = 200;
+
+export interface TourOverlayProps {
+  /**
+   * Renders the tooltip card, replacing the built-in one, e.g. with your design
+   * system's components and theme. The card is placed next to the target for you.
+   */
+  renderTooltip?: (props: TourTooltipProps) => React.ReactNode;
+  /** Width of the tooltip card (it is never wider than the screen allows). Default: 280. */
+  tooltipWidth?: number;
+  /** Color of the dimmed area around the target. Default: 'rgba(0, 0, 0, 0.6)'. */
+  backdropColor?: string;
+}
 
 const selectOverlay = (state: TourEngineState) => ({
   presented: state.presented,
@@ -26,15 +32,18 @@ const selectOverlay = (state: TourEngineState) => ({
     state.presented.stepIndex === state.stepIndex,
 });
 
-/** Fade-in duration (ms) when the overlay appears. Hiding is instant. */
-const FADE_IN_MS = 200;
-
-export const TourOverlay = () => {
+export const TourOverlay = (props: TourOverlayProps) => {
   const { presented, isSettled } = useTourState(selectOverlay);
-  return presented ? <OverlayContent presented={presented} isSettled={isSettled} /> : null;
+  return presented ? <OverlayContent {...props} presented={presented} isSettled={isSettled} /> : null;
 };
 
-const OverlayContent = ({ presented, isSettled }: { presented: PresentedStep; isSettled: boolean }) => {
+const OverlayContent = ({
+  presented,
+  isSettled,
+  renderTooltip,
+  tooltipWidth = DEFAULT_TOOLTIP_WIDTH,
+  backdropColor = DEFAULT_BACKDROP_COLOR,
+}: TourOverlayProps & { presented: PresentedStep; isSettled: boolean }) => {
   const engine = useTourEngine();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -47,70 +56,33 @@ const OverlayContent = ({ presented, isSettled }: { presented: PresentedStep; is
   }, [opacity]);
 
   const activeTour = engine.getTour(presented.tourId);
-  const currentStepIndex = presented.stepIndex;
-  const currentStep = activeTour?.steps[currentStepIndex];
-  if (!activeTour || !currentStep) return null;
-
-  // Ignore taps while moving between steps, so one tap never advances twice.
-  const nextStep = () => isSettled && engine.nextStep();
-  const prevStep = () => isSettled && engine.prevStep();
-  const stopTour = () => engine.stopTour();
+  const step = activeTour?.steps[presented.stepIndex];
+  if (!activeTour || !step) return null;
 
   const { x, y, width, height } = presented.rect;
-
-  const pos = currentStep.position || 'bottom';
-
-  const tooltipStyle: ViewStyle = {
-    position: 'absolute',
-    width: TOOLTIP_WIDTH,
-    backgroundColor: 'white',
-    padding: EDGE_PADDING,
-    borderRadius: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    // Horizontal centering by default
-    left: Math.max(
-      EDGE_PADDING,
-      Math.min(x + width / 2 - TOOLTIP_WIDTH / 2, screenWidth - TOOLTIP_WIDTH - EDGE_PADDING),
-    ),
+  const stepCount = activeTour.steps.length;
+  const tooltipProps: TourTooltipProps = {
+    tour: activeTour,
+    step,
+    stepIndex: presented.stepIndex,
+    stepCount,
+    isFirstStep: presented.stepIndex === 0,
+    isLastStep: presented.stepIndex === stepCount - 1,
+    // Ignore taps while moving between steps, so one tap never advances twice.
+    next: () => {
+      if (isSettled) engine.nextStep();
+    },
+    prev: () => {
+      if (isSettled) engine.prevStep();
+    },
+    skip: () => engine.stopTour(),
   };
 
-  if (pos === 'top') {
-    tooltipStyle.bottom = screenHeight - y + TOOLTIP_GAP;
-  } else if (pos === 'left') {
-    tooltipStyle.right = screenWidth - x + TOOLTIP_GAP;
-    tooltipStyle.left = undefined; // Clear the default left
-    tooltipStyle.width = Math.min(TOOLTIP_WIDTH, x - EDGE_PADDING * 2);
-    tooltipStyle.top = Math.max(
-      EDGE_PADDING,
-      Math.min(y + height / 2 - VERTICAL_CENTER_OFFSET, screenHeight - VERTICAL_SAFE_BOTTOM),
-    );
-  } else if (pos === 'right') {
-    tooltipStyle.left = x + width + TOOLTIP_GAP;
-    tooltipStyle.width = Math.min(TOOLTIP_WIDTH, screenWidth - (x + width) - EDGE_PADDING * 2);
-    tooltipStyle.top = Math.max(
-      EDGE_PADDING,
-      Math.min(y + height / 2 - VERTICAL_CENTER_OFFSET, screenHeight - VERTICAL_SAFE_BOTTOM),
-    );
-  } else {
-    // bottom (default)
-    tooltipStyle.top = y + height + TOOLTIP_GAP;
-    // Check if it spills off bottom of screen
-    if ((tooltipStyle.top as number) + ESTIMATED_TOOLTIP_HEIGHT > screenHeight) {
-      tooltipStyle.top = undefined;
-      tooltipStyle.bottom = EDGE_PADDING; // Pin to bottom if it overflows
-    }
-  }
-
-  const isFirstStep = currentStepIndex === 0;
-  const isLastStep = currentStepIndex === activeTour.steps.length - 1;
+  const backdrop = [styles.backdrop, { backgroundColor: backdropColor }];
 
   return (
     // onRequestClose: the Android back button dismisses the tour, like "Skip".
-    <Modal transparent visible animationType="none" onRequestClose={() => stopTour()}>
+    <Modal transparent visible animationType="none" onRequestClose={() => engine.stopTour()}>
       {/*
         Sized explicitly from the window rather than absoluteFill: on the New Architecture the
         Modal's content container does not reliably fill the screen, which hid the bottom
@@ -118,48 +90,111 @@ const OverlayContent = ({ presented, isSettled }: { presented: PresentedStep; is
       */}
       <Animated.View style={[styles.fullscreen, { width: screenWidth, height: screenHeight, opacity }]}>
         {/* Top backdrop */}
-        <View style={[styles.backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
+        <View style={[backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
         {/* Bottom backdrop */}
-        <View style={[styles.backdrop, { top: y + height, left: 0, right: 0, bottom: 0 }]} />
+        <View style={[backdrop, { top: y + height, left: 0, right: 0, bottom: 0 }]} />
         {/* Left backdrop */}
-        <View style={[styles.backdrop, { top: y, left: 0, width: Math.max(0, x), height }]} />
+        <View style={[backdrop, { top: y, left: 0, width: Math.max(0, x), height }]} />
         {/* Right backdrop */}
-        <View style={[styles.backdrop, { top: y, left: x + width, right: 0, height }]} />
+        <View style={[backdrop, { top: y, left: x + width, right: 0, height }]} />
 
-        {/* The Tooltip Card */}
-        <View style={tooltipStyle}>
-          <Text style={styles.title}>{currentStep.title}</Text>
-          <Text style={styles.description}>{currentStep.description}</Text>
-
-          {/* Step indicator */}
-          {activeTour.steps.length > 1 && (
-            <Text style={styles.stepIndicator}>
-              {currentStepIndex + 1} / {activeTour.steps.length}
-            </Text>
-          )}
-
-          <View style={styles.actions}>
-            {!isLastStep && (
-              <TouchableOpacity onPress={() => stopTour()} style={styles.actionBtn}>
-                <Text style={styles.actionText}>Skip</Text>
-              </TouchableOpacity>
-            )}
-
-            {!isFirstStep && (
-              <TouchableOpacity onPress={prevStep} style={styles.actionBtn}>
-                <Text style={styles.actionText}>Back</Text>
-              </TouchableOpacity>
-            )}
-
-            <TouchableOpacity onPress={nextStep} style={[styles.actionBtn, styles.primaryBtn]}>
-              <Text style={[styles.actionText, styles.primaryText]}>{isLastStep ? 'Finish' : 'Next'}</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Remounted per step so each card is measured before it is shown. */}
+        <TooltipPosition
+          key={`${presented.tourId}:${presented.stepIndex}`}
+          presented={presented}
+          position={step.position}
+          tooltipWidth={tooltipWidth}
+          screenWidth={screenWidth}
+          screenHeight={screenHeight}>
+          {renderTooltip ? renderTooltip(tooltipProps) : <DefaultTooltip {...tooltipProps} />}
+        </TooltipPosition>
       </Animated.View>
     </Modal>
   );
 };
+
+/** Places the card beside the target once its height is known (hidden until then). */
+const TooltipPosition = ({
+  presented,
+  position,
+  tooltipWidth,
+  screenWidth,
+  screenHeight,
+  children,
+}: {
+  presented: PresentedStep;
+  position: TourTooltipProps['step']['position'];
+  tooltipWidth: number;
+  screenWidth: number;
+  screenHeight: number;
+  children: React.ReactNode;
+}) => {
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const placement = placeTooltip({
+    rect: presented.rect,
+    cardHeight: cardHeight ?? 0,
+    screenWidth,
+    screenHeight,
+    position,
+    width: tooltipWidth,
+  });
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    const measured = e.nativeEvent.layout.height;
+    setCardHeight(previous => (previous !== null && Math.abs(previous - measured) < 1 ? previous : measured));
+  };
+
+  return (
+    <View
+      testID="rn-smart-tour-tooltip"
+      onLayout={onLayout}
+      style={[styles.tooltipPosition, placement, { opacity: cardHeight === null ? 0 : 1 }]}>
+      {children}
+    </View>
+  );
+};
+
+/** The built-in card. Pass `renderTooltip` to replace it. */
+export const DefaultTooltip = ({
+  step,
+  stepIndex,
+  stepCount,
+  isFirstStep,
+  isLastStep,
+  next,
+  prev,
+  skip,
+}: TourTooltipProps) => (
+  <View style={styles.card}>
+    <Text style={styles.title}>{step.title}</Text>
+    <Text style={styles.description}>{step.description}</Text>
+
+    {/* Step indicator */}
+    {stepCount > 1 && (
+      <Text style={styles.stepIndicator}>
+        {stepIndex + 1} / {stepCount}
+      </Text>
+    )}
+
+    <View style={styles.actions}>
+      {!isLastStep && (
+        <TouchableOpacity onPress={skip} style={styles.actionBtn}>
+          <Text style={styles.actionText}>Skip</Text>
+        </TouchableOpacity>
+      )}
+
+      {!isFirstStep && (
+        <TouchableOpacity onPress={prev} style={styles.actionBtn}>
+          <Text style={styles.actionText}>Back</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity onPress={next} style={[styles.actionBtn, styles.primaryBtn]}>
+        <Text style={[styles.actionText, styles.primaryText]}>{isLastStep ? 'Finish' : 'Next'}</Text>
+      </TouchableOpacity>
+    </View>
+  </View>
+);
 
 const styles = StyleSheet.create({
   fullscreen: {
@@ -169,7 +204,19 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     position: 'absolute',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  tooltipPosition: {
+    position: 'absolute',
+  },
+  card: {
+    backgroundColor: 'white',
+    padding: 16,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   title: {
     fontSize: 16,

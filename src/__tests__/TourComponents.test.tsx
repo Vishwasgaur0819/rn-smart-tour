@@ -1,5 +1,5 @@
 import { createRef, useRef } from 'react';
-import { FlatList, Modal, ScrollView, Text, View } from 'react-native';
+import { FlatList, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import {
   createTourController,
@@ -236,6 +236,72 @@ describe('Overlay visibility', () => {
 
     act(() => api.stopTour());
     expect(screen.UNSAFE_queryByType(Modal)).toBeNull();
+  });
+});
+
+describe('custom tooltip', () => {
+  it('renderTooltip draws the card and drives the tour; backdropColor and tooltipWidth apply', async () => {
+    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
+    const renderTooltip = jest.fn((props: any) => (
+      <View>
+        <Text>{`${props.step.title} ${props.stepIndex + 1}/${props.stepCount}`}</Text>
+        <Text onPress={props.next}>my-next</Text>
+        <Text onPress={props.skip}>my-skip</Text>
+      </View>
+    ));
+    render(
+      <TourProvider
+        tours={TOURS}
+        renderTooltip={renderTooltip}
+        backdropColor="rgba(1, 2, 3, 0.5)"
+        tooltipWidth={320}>
+        <TourTarget name="save">
+          <Text>Save</Text>
+        </TourTarget>
+        <TourTarget name="next">
+          <Text>Second</Text>
+        </TourTarget>
+        <Probe />
+      </TourProvider>,
+    );
+    act(() => api.startTour('t'));
+    await advance(200);
+
+    expect(screen.getByText('Save 1/2')).toBeTruthy();
+    expect(screen.queryByText('Skip')).toBeNull(); // built-in card replaced
+    expect(renderTooltip.mock.calls.at(-1)?.[0]).toMatchObject({ isFirstStep: true, isLastStep: false });
+    const backdrops = screen
+      .UNSAFE_getByType(Modal)
+      .findAll((node: any) => StyleSheet.flatten(node.props.style)?.backgroundColor === 'rgba(1, 2, 3, 0.5)');
+    expect(backdrops.length).toBeGreaterThanOrEqual(4);
+    expect(StyleSheet.flatten(screen.getByTestId('rn-smart-tour-tooltip').props.style).width).toBe(320);
+
+    fireEvent.press(screen.getByText('my-next'));
+    await advance(200);
+    expect(screen.getByText('Next one 2/2')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('my-skip'));
+    expect(api.status).toBe('idle');
+    expect(api.seenTours.t).toBe(true);
+  });
+
+  it('keeps the card invisible until it has been measured, so it never jumps into place', async () => {
+    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
+    render(
+      <TourProvider tours={TOURS}>
+        <TourTarget name="save">
+          <Text>Save</Text>
+        </TourTarget>
+        <Probe />
+      </TourProvider>,
+    );
+    act(() => api.startTour('t'));
+    await advance(200);
+    const card = screen.getByTestId('rn-smart-tour-tooltip');
+    expect(StyleSheet.flatten(card.props.style).opacity).toBe(0);
+
+    fireEvent(card, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 280, height: 140 } } });
+    expect(StyleSheet.flatten(screen.getByTestId('rn-smart-tour-tooltip').props.style).opacity).toBe(1);
   });
 });
 

@@ -6,8 +6,9 @@ import { TourEngine } from '../core/TourEngine';
 import type { StorageAdapter, Tour } from '../types';
 import { TourEngineContext } from './context';
 import { TourOverlay } from './TourOverlay';
+import type { TourOverlayProps } from './TourOverlay';
 
-interface CommonProps {
+interface CommonProps extends TourOverlayProps {
   children: React.ReactNode;
   /**
    * How long (ms) a step waits for its target to be on screen before the step's
@@ -39,6 +40,9 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   storageAdapter,
   controller,
   missingTargetTimeoutMs,
+  renderTooltip,
+  tooltipWidth,
+  backdropColor,
 }) => {
   const [engine] = useState(() => {
     if (!controller)
@@ -72,7 +76,7 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   return (
     <TourEngineContext.Provider value={engine}>
       {children}
-      <TourOverlay />
+      <TourOverlay renderTooltip={renderTooltip} tooltipWidth={tooltipWidth} backdropColor={backdropColor} />
     </TourEngineContext.Provider>
   );
 };

@@ -40,6 +40,23 @@ export interface StartTourOptions {
   force?: boolean;
 }
 
+/** What a custom tooltip card (`renderTooltip`) receives. */
+export interface TourTooltipProps {
+  tour: Tour;
+  step: TourStep;
+  /** 0-based index of `step` in `tour.steps`. */
+  stepIndex: number;
+  stepCount: number;
+  isFirstStep: boolean;
+  isLastStep: boolean;
+  /** Next step, or finish (and mark seen) on the last one. */
+  next: () => void;
+  /** Previous step. */
+  prev: () => void;
+  /** End the tour and mark it seen. */
+  skip: () => void;
+}
+
 /**
  * - `idle`: no tour running.
  * - `waiting`: a step is active but its target is not measured yet (or not on screen).

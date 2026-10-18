@@ -159,9 +159,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 ```
 
 ```tsx
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv'; // v4; on v3: `const mmkv = new MMKV()`
 
-const mmkv = new MMKV();
+const mmkv = createMMKV();
 const mmkvAdapter = {
   getItem: (key: string) => mmkv.getString(key) ?? null,
   setItem: (key: string, value: string) => mmkv.set(key, value),
@@ -172,7 +172,32 @@ const mmkvAdapter = {
 
 Storage is read once on mount. Calls to `startTour`, `resetTour` and `resetAll` made before it has loaded are queued and run once it has, so an already-seen tour is never shown by mistake.
 
-### 8. Start Tours from Outside React (Optional)
+### 8. Your Own Tooltip Card (Optional)
+Render the card with your design system and theme. It is placed beside the target for you (below by default, flipping above when there's no room), using its measured height.
+
+```tsx
+import type { TourTooltipProps } from 'rn-smart-tour';
+
+const TourCard = ({ step, stepIndex, stepCount, isFirstStep, isLastStep, next, prev, skip }: TourTooltipProps) => (
+  <Card>
+    <Title>{step.title}</Title>
+    <Body>{step.description}</Body>
+    <Row>
+      {!isLastStep && <Button title="Skip" onPress={skip} />}
+      {!isFirstStep && <Button title="Back" onPress={prev} />}
+      <Button title={isLastStep ? 'Done' : `Next (${stepIndex + 1}/${stepCount})`} onPress={next} />
+    </Row>
+  </Card>
+);
+
+<TourProvider
+  tours={TOURS}
+  renderTooltip={props => <TourCard {...props} />}
+  tooltipWidth={320}
+  backdropColor="rgba(0, 0, 0, 0.6)">
+```
+
+### 9. Start Tours from Outside React (Optional)
 For deep links or notification handlers, create a controller and pass it to the provider:
 
 ```tsx
@@ -234,6 +259,9 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `storageAdapter` | `StorageAdapter` | — | Persists seen tours (AsyncStorage, MMKV, …). Read once on mount. |
 | `missingTargetTimeoutMs` | `number` | `3000` | How long a step waits for its target. |
 | `controller` | `TourController` | — | From `createTourController`, instead of `tours` / `storageAdapter`. |
+| `renderTooltip` | `(props: TourTooltipProps) => ReactNode` | built-in card | Draws the tooltip card. Receives the step, its index and count, and `next` / `prev` / `skip`. |
+| `tooltipWidth` | `number` | `280` | Card width (capped to the screen). |
+| `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
 
 ### Tour Configuration
 | Property | Type | Description |
