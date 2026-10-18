@@ -219,58 +219,74 @@ describe('Overlay', () => {
   });
 });
 
-describe('Overlay visibility', () => {
-  it('allows every orientation by default, so landscape-only apps do not crash on iOS', async () => {
+describe('Overlay presentation', () => {
+  const Tree = ({ presentation, supportedOrientations }: any) => (
+    <TourProvider tours={TOURS} presentation={presentation} supportedOrientations={supportedOrientations}>
+      <TourTarget name="save">
+        <Text>Save</Text>
+      </TourTarget>
+      <Probe />
+    </TourProvider>
+  );
+
+  it("by default draws a root layer, not a Modal, so it never conflicts with the app's own modals", async () => {
     mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
-    render(
-      <TourProvider tours={TOURS}>
-        <TourTarget name="save">
-          <Text>Save</Text>
-        </TourTarget>
-        <Probe />
-      </TourProvider>,
-    );
+    render(<Tree />);
     act(() => api.startTour('t'));
     await advance(200);
-    expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual(
-      expect.arrayContaining(['portrait', 'landscape', 'landscape-left', 'landscape-right']),
-    );
+
+    expect(screen.UNSAFE_queryByType(Modal)).toBeNull();
+    const layer = screen.getByTestId('rn-smart-tour-overlay');
+    expect(StyleSheet.flatten(layer.props.style)).toMatchObject({ position: 'absolute', zIndex: 10000 });
+
+    act(() => api.stopTour());
+    expect(screen.queryByTestId('rn-smart-tour-overlay')).toBeNull(); // gone instantly, no fade-out
   });
 
-  it("uses the app's own orientations when given", async () => {
+  it('draws the cutout relative to where the root layer starts in the window', async () => {
+    // The target is at window y=120; the layer itself starts at window y=50.
+    jest.spyOn(View.prototype as any, 'measureInWindow').mockImplementation(function (this: any, cb: any) {
+      if (this.props?.testID === 'rn-smart-tour-overlay') cb(0, 50, 400, 800);
+      else cb(10, 120, 100, 40);
+    });
+    render(<Tree />);
+    act(() => api.startTour('t'));
+    await advance(200);
+
+    const layer = screen.getByTestId('rn-smart-tour-overlay');
+    fireEvent(layer, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+    const topBackdrop = layer.findAll((node: any) => {
+      const style = StyleSheet.flatten(node.props.style);
+      return node.type === 'View' && style?.top === 0 && style?.backgroundColor === 'rgba(0, 0, 0, 0.6)';
+    })[0];
+    expect(StyleSheet.flatten(topBackdrop.props.style).height).toBe(70);
+  });
+
+  it("presentation='modal' uses a Modal that allows every orientation (landscape-only apps crashed on iOS)", async () => {
     mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
-    render(
-      <TourProvider tours={TOURS} supportedOrientations={['landscape-left', 'landscape-right']}>
-        <TourTarget name="save">
-          <Text>Save</Text>
-        </TourTarget>
-        <Probe />
-      </TourProvider>,
+    render(<Tree presentation="modal" />);
+    act(() => api.startTour('t'));
+    await advance(200);
+
+    const modal = screen.UNSAFE_getByType(Modal);
+    expect(modal.props.animationType).toBe('none');
+    expect(modal.props.supportedOrientations).toEqual(
+      expect.arrayContaining(['portrait', 'landscape', 'landscape-left', 'landscape-right']),
     );
+
+    act(() => api.stopTour());
+    expect(screen.UNSAFE_queryByType(Modal)).toBeNull();
+  });
+
+  it("presentation='modal' uses the app's own orientations when given", async () => {
+    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
+    render(<Tree presentation="modal" supportedOrientations={['landscape-left', 'landscape-right']} />);
     act(() => api.startTour('t'));
     await advance(200);
     expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations).toEqual([
       'landscape-left',
       'landscape-right',
     ]);
-  });
-
-  it('disappears instantly (no Modal fade-out) so an old step is never drawn over a screen that is leaving', async () => {
-    mockWindowRect({ x: 10, y: 20, width: 100, height: 40 });
-    render(
-      <TourProvider tours={TOURS}>
-        <TourTarget name="save">
-          <Text>Save</Text>
-        </TourTarget>
-        <Probe />
-      </TourProvider>,
-    );
-    act(() => api.startTour('t'));
-    await advance(200);
-    expect(screen.UNSAFE_getByType(Modal).props.animationType).toBe('none');
-
-    act(() => api.stopTour());
-    expect(screen.UNSAFE_queryByType(Modal)).toBeNull();
   });
 });
 
@@ -306,7 +322,7 @@ describe('custom tooltip', () => {
     expect(screen.queryByText('Skip')).toBeNull(); // built-in card replaced
     expect(renderTooltip.mock.calls.at(-1)?.[0]).toMatchObject({ isFirstStep: true, isLastStep: false });
     const backdrops = screen
-      .UNSAFE_getByType(Modal)
+      .getByTestId('rn-smart-tour-overlay')
       .findAll((node: any) => StyleSheet.flatten(node.props.style)?.backgroundColor === 'rgba(1, 2, 3, 0.5)');
     expect(backdrops.length).toBeGreaterThanOrEqual(4);
     expect(StyleSheet.flatten(screen.getByTestId('rn-smart-tour-tooltip').props.style).width).toBe(320);

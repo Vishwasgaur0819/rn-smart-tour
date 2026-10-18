@@ -44,6 +44,7 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   tooltipWidth,
   backdropColor,
   supportedOrientations,
+  presentation,
 }) => {
   const [engine] = useState(() => {
     if (!controller)
@@ -82,6 +83,7 @@ export const TourProvider: React.FC<TourProviderProps> = ({
         tooltipWidth={tooltipWidth}
         backdropColor={backdropColor}
         supportedOrientations={supportedOrientations}
+        presentation={presentation}
       />
     </TourEngineContext.Provider>
   );

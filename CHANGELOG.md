@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.3 — 2026-10-19
+
+### Changed
+- The overlay is now drawn as a layer over the app (next to `TourProvider`'s children) instead of a React Native `Modal`. On iOS only one modal can be presented at a time, so the Modal overlay conflicted with the app's own modals: a tour started while a popup was open never appeared (and stayed "active" invisibly; on iPad the retry raised the orientation error), and a popup opened during a tour could fail to appear. Now the app's modals simply open above the tour, and the tour is still there when they close. The Android back button closes an open popup first, then the tour.
+- `TourProvider` must wrap the whole app (as documented); the layer measures where it starts in the window, so a provider below a header or safe-area padding still lines up.
+
+### Added
+- `presentation: 'root' | 'modal'` on `TourProvider` (default `'root'`). Use `'modal'` only if a tour points at elements inside another Modal.
+
 ## 2.0.0-beta.2 — 2026-10-19
 
 ### Fixed

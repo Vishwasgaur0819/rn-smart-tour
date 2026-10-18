@@ -262,7 +262,8 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `renderTooltip` | `(props: TourTooltipProps) => ReactNode` | built-in card | Draws the tooltip card. Receives the step, its index and count, and `next` / `prev` / `skip`. |
 | `tooltipWidth` | `number` | `280` | Card width (capped to the screen). |
 | `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
-| `supportedOrientations` | `ModalProps['supportedOrientations']` | all | iOS orientations the overlay allows (still limited by Info.plist). |
+| `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal` (only for tours inside another Modal). |
+| `supportedOrientations` | `ModalProps['supportedOrientations']` | all | With `presentation="modal"`: iOS orientations the overlay allows (still limited by Info.plist). |
 
 ### Tour Configuration
 | Property | Type | Description |

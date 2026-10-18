@@ -1,8 +1,12 @@
 import { useEffect } from 'react';
-import { Modal, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Modal, StyleSheet, useWindowDimensions } from 'react-native';
 import { act, render, screen } from '@testing-library/react-native';
 import { DapProvider, useDap } from '../compat';
 import type { DapContextType, StorageAdapter, TargetMeasurement, Tour } from '../types';
+
+jest.mock('react-native/Libraries/Utilities/BackHandler', () =>
+  jest.requireActual('react-native/Libraries/Utilities/__mocks__/BackHandler'),
+);
 
 const MEASUREMENT: TargetMeasurement = { x: 10, y: 20, width: 100, height: 40 };
 
@@ -285,7 +289,7 @@ describe('DapProvider', () => {
     });
   });
 
-  it('sizes the overlay from the window, not from the Modal container (New Architecture)', async () => {
+  it('sizes the overlay from the window (a Modal container does not reliably fill it)', async () => {
     let window = { width: 0, height: 0 };
     const WindowProbe = () => {
       window = useWindowDimensions();
@@ -299,16 +303,32 @@ describe('DapProvider', () => {
       </DapProvider>,
     );
     await flush(400);
-    const container = screen.UNSAFE_getByType(Modal).findAllByType(View)[0];
+    const container = screen.getByTestId('rn-smart-tour-overlay');
     expect(StyleSheet.flatten(container.props.style)).toMatchObject({
       width: window.width,
       height: window.height,
     });
   });
 
-  it('dismisses the tour on Android back (Modal onRequestClose), like Skip', async () => {
+  it('dismisses the tour on the Android back button, like Skip', async () => {
     render(
       <DapProvider tours={TOURS}>
+        <FakeTarget name="a" />
+        <FakeTarget name="b" />
+        <Probe />
+      </DapProvider>,
+    );
+    await flush(400);
+    act(() => {
+      (BackHandler as any).mockPressBack();
+    });
+    expect(ctx.activeTour).toBeNull();
+    expect(ctx.seenTours.intro).toBe(true);
+  });
+
+  it("presentation='modal': Android back (Modal onRequestClose) dismisses the tour", async () => {
+    render(
+      <DapProvider tours={TOURS} presentation="modal">
         <FakeTarget name="a" />
         <FakeTarget name="b" />
         <Probe />

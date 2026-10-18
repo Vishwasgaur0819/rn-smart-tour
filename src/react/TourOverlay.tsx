@@ -1,5 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, View, Text, StyleSheet, Modal, TouchableOpacity, useWindowDimensions } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  BackHandler,
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  useWindowDimensions,
+} from 'react-native';
 import type { LayoutChangeEvent, ModalProps } from 'react-native';
 import type { PresentedStep, TourEngineState } from '../core/TourEngine';
 import type { TourTooltipProps } from '../types';
@@ -38,6 +47,15 @@ export interface TourOverlayProps {
    * limits it to the app's Info.plist). Pass your app's own list to match its modals.
    */
   supportedOrientations?: ModalProps['supportedOrientations'];
+  /**
+   * - `'root'` (default): drawn as a layer over the app, next to `TourProvider`'s
+   *   children. The app's own modals and popups open above it and never conflict
+   *   with it. `TourProvider` must wrap the whole app (as it normally does).
+   * - `'modal'`: drawn in a React Native `Modal`. Only needed if a tour points at
+   *   elements inside another Modal. On iOS only one modal can be presented at a
+   *   time, so it can't show while another one is open, and vice versa.
+   */
+  presentation?: 'root' | 'modal';
 }
 
 const selectOverlay = (state: TourEngineState) => ({
@@ -61,23 +79,49 @@ const OverlayContent = ({
   tooltipWidth = DEFAULT_TOOLTIP_WIDTH,
   backdropColor = DEFAULT_BACKDROP_COLOR,
   supportedOrientations = ALL_ORIENTATIONS,
+  presentation = 'root',
 }: TourOverlayProps & { presented: PresentedStep; isSettled: boolean }) => {
   const engine = useTourEngine();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const isRoot = presentation === 'root';
 
-  // Fades in when the overlay appears; moving between steps does not fade again.
+  // Target rects are window-relative. A Modal starts at the window's origin; the root
+  // layer measures where it starts (normally also the origin) and draws relative to that.
+  const layerRef = useRef<View>(null);
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(isRoot ? null : { x: 0, y: 0 });
+  const measureOrigin = useCallback(() => {
+    layerRef.current?.measureInWindow((x, y) => {
+      setOrigin(previous => (previous && previous.x === x && previous.y === y ? previous : { x, y }));
+    });
+  }, []);
+
+  // Fades in once positioned; moving between steps does not fade again.
   // Not using Modal's animationType: its fade-out would leave the old step drawn over
   // a screen that is already navigating away.
   const opacity = useRef(new Animated.Value(0)).current;
+  const isPositioned = origin !== null;
   useEffect(() => {
+    if (!isPositioned) return;
     Animated.timing(opacity, { toValue: 1, duration: FADE_IN_MS, useNativeDriver: true }).start();
-  }, [opacity]);
+  }, [opacity, isPositioned]);
+
+  // The root layer has no Modal onRequestClose: the Android back button dismisses the tour, like "Skip".
+  useEffect(() => {
+    if (!isRoot) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      engine.stopTour();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [engine, isRoot]);
 
   const activeTour = engine.getTour(presented.tourId);
   const step = activeTour?.steps[presented.stepIndex];
   if (!activeTour || !step) return null;
 
-  const { x, y, width, height } = presented.rect;
+  const x = presented.rect.x - (origin?.x ?? 0);
+  const y = presented.rect.y - (origin?.y ?? 0);
+  const { width, height } = presented.rect;
   const stepCount = activeTour.steps.length;
   const tooltipProps: TourTooltipProps = {
     tour: activeTour,
@@ -98,6 +142,44 @@ const OverlayContent = ({
 
   const backdrop = [styles.backdrop, { backgroundColor: backdropColor }];
 
+  const layer = (
+    // Sized explicitly from the window rather than absoluteFill: on the New Architecture a
+    // Modal's content container does not reliably fill the screen, which hid the bottom
+    // backdrop and every tooltip positioned with `bottom` (position: 'top').
+    <Animated.View
+      ref={layerRef}
+      testID="rn-smart-tour-overlay"
+      onLayout={isRoot ? measureOrigin : undefined}
+      accessibilityViewIsModal
+      style={[
+        styles.fullscreen,
+        isRoot && styles.rootLayer,
+        { width: screenWidth, height: screenHeight, opacity },
+      ]}>
+      {/* Top backdrop */}
+      <View style={[backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
+      {/* Bottom backdrop */}
+      <View style={[backdrop, { top: y + height, left: 0, right: 0, bottom: 0 }]} />
+      {/* Left backdrop */}
+      <View style={[backdrop, { top: y, left: 0, width: Math.max(0, x), height }]} />
+      {/* Right backdrop */}
+      <View style={[backdrop, { top: y, left: x + width, right: 0, height }]} />
+
+      {/* Remounted per step so each card is measured before it is shown. */}
+      <TooltipPosition
+        key={`${presented.tourId}:${presented.stepIndex}`}
+        rect={{ x, y, width, height }}
+        position={step.position}
+        tooltipWidth={tooltipWidth}
+        screenWidth={screenWidth}
+        screenHeight={screenHeight}>
+        {renderTooltip ? renderTooltip(tooltipProps) : <DefaultTooltip {...tooltipProps} />}
+      </TooltipPosition>
+    </Animated.View>
+  );
+
+  if (isRoot) return layer;
+
   return (
     // onRequestClose: the Android back button dismisses the tour, like "Skip".
     <Modal
@@ -106,46 +188,21 @@ const OverlayContent = ({
       animationType="none"
       supportedOrientations={supportedOrientations}
       onRequestClose={() => engine.stopTour()}>
-      {/*
-        Sized explicitly from the window rather than absoluteFill: on the New Architecture the
-        Modal's content container does not reliably fill the screen, which hid the bottom
-        backdrop and every tooltip positioned with `bottom` (position: 'top').
-      */}
-      <Animated.View style={[styles.fullscreen, { width: screenWidth, height: screenHeight, opacity }]}>
-        {/* Top backdrop */}
-        <View style={[backdrop, { top: 0, left: 0, right: 0, height: Math.max(0, y) }]} />
-        {/* Bottom backdrop */}
-        <View style={[backdrop, { top: y + height, left: 0, right: 0, bottom: 0 }]} />
-        {/* Left backdrop */}
-        <View style={[backdrop, { top: y, left: 0, width: Math.max(0, x), height }]} />
-        {/* Right backdrop */}
-        <View style={[backdrop, { top: y, left: x + width, right: 0, height }]} />
-
-        {/* Remounted per step so each card is measured before it is shown. */}
-        <TooltipPosition
-          key={`${presented.tourId}:${presented.stepIndex}`}
-          presented={presented}
-          position={step.position}
-          tooltipWidth={tooltipWidth}
-          screenWidth={screenWidth}
-          screenHeight={screenHeight}>
-          {renderTooltip ? renderTooltip(tooltipProps) : <DefaultTooltip {...tooltipProps} />}
-        </TooltipPosition>
-      </Animated.View>
+      {layer}
     </Modal>
   );
 };
 
 /** Places the card beside the target once its height is known (hidden until then). */
 const TooltipPosition = ({
-  presented,
+  rect,
   position,
   tooltipWidth,
   screenWidth,
   screenHeight,
   children,
 }: {
-  presented: PresentedStep;
+  rect: PresentedStep['rect'];
   position: TourTooltipProps['step']['position'];
   tooltipWidth: number;
   screenWidth: number;
@@ -154,7 +211,7 @@ const TooltipPosition = ({
 }) => {
   const [cardHeight, setCardHeight] = useState<number | null>(null);
   const placement = placeTooltip({
-    rect: presented.rect,
+    rect,
     cardHeight: cardHeight ?? 0,
     screenWidth,
     screenHeight,
@@ -224,6 +281,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
+  },
+  rootLayer: {
+    // Above the app's other root-level views (and their Android elevation).
+    zIndex: 10000,
+    elevation: 10000,
   },
   backdrop: {
     position: 'absolute',
