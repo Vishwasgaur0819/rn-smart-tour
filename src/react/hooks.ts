@@ -1,7 +1,7 @@
 import { useContext, useMemo, useRef, useSyncExternalStore } from 'react';
 import { shallowEqual } from '../core/store';
 import type { TourEngine, TourEngineState } from '../core/TourEngine';
-import type { TourApi, TourStatus } from '../types';
+import type { TourApi, TourCatalogEntry, TourStatus } from '../types';
 import { TourEngineContext } from './context';
 
 export function useTourEngine(): TourEngine {
@@ -39,6 +39,7 @@ export function useTourState<T>(
 
 export const getStatus = (state: TourEngineState): TourStatus => {
   if (!state.tourId) return 'idle';
+  if (state.paused) return 'paused';
   const { presented } = state;
   return presented && presented.tourId === state.tourId && presented.stepIndex === state.stepIndex
     ? 'active'
@@ -51,6 +52,44 @@ const selectTourSummary = (state: TourEngineState) => ({
   seen: state.seen,
   status: getStatus(state),
 });
+
+const selectToursRevision = (state: TourEngineState) => state.toursRevision;
+
+const normalize = (text: string) => text.toLowerCase();
+
+/**
+ * Tours for a help list ("How do I…?"), optionally of one `kind` and matching a
+ * search `query` (every word must appear in the title, description or keywords).
+ * Tours without a `title` are left out.
+ */
+export function useTourCatalog({
+  kind,
+  query = '',
+}: { kind?: 'tour' | 'walkthrough'; query?: string } = {}): TourCatalogEntry[] {
+  const engine = useTourEngine();
+  const revision = useTourState(selectToursRevision);
+
+  return useMemo(() => {
+    const words = normalize(query).split(/\s+/).filter(Boolean);
+    return engine
+      .getTours()
+      .filter(tour => tour.title && (!kind || (tour.kind ?? 'tour') === kind))
+      .filter(tour => {
+        const haystack = normalize(
+          [tour.title, tour.description, ...(tour.keywords ?? [])].filter(Boolean).join(' '),
+        );
+        return words.every(word => haystack.includes(word));
+      })
+      .map(tour => ({
+        id: tour.id,
+        title: tour.title as string,
+        description: tour.description,
+        kind: tour.kind ?? 'tour',
+      }));
+    // `revision` changes when the tours do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, kind, query, revision]);
+}
 
 /** Tour actions and the running tour. Re-renders only when those change, not on measurements. */
 export function useTour(): TourApi {
@@ -65,6 +104,9 @@ export function useTour(): TourApi {
       prevStep: engine.prevStep,
       resetTour: engine.resetTour,
       resetAll: engine.resetAll,
+      emit: engine.emit,
+      pauseTour: engine.pauseTour,
+      resumeTour: engine.resumeTour,
       status,
       activeTour: tourId ? engine.getTour(tourId) : null,
       currentStepIndex: stepIndex,

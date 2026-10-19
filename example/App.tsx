@@ -58,6 +58,18 @@ const TOURS: Record<string, Tour> = {
     id: 'titleOnly',
     steps: [{ targetId: 'title', title: 'Which title?', description: 'Only the focused screen counts.' }],
   },
+  openDetails: {
+    id: 'openDetails',
+    kind: 'walkthrough',
+    title: 'Open the details screen',
+    keywords: ['details', 'second screen'],
+    steps: [
+      { title: "Let's open the details screen", description: 'It takes two taps.' },
+      { targetId: 'open-details', title: 'Tap Open details', description: '', advanceOn: 'press' },
+      { targetId: 'details-card', title: 'Here it is', description: 'This card is on the details screen.' },
+      { title: 'All done!', description: 'You opened the details screen yourself.' },
+    ],
+  },
   broken: {
     id: 'broken',
     steps: [
@@ -116,7 +128,14 @@ const HomeScreen = () => {
           <Button testID="start-broken" label="Missing target" onPress={() => startTour('broken', { force: true })} />
         </TourTarget>
       </View>
-      <Button testID="reset" label="Reset all tours" onPress={resetAll} />
+      <View style={styles.row}>
+        <Button testID="reset" label="Reset all tours" onPress={resetAll} />
+        <Button
+          testID="start-walkthrough"
+          label="Walkthrough"
+          onPress={() => startTour('openDetails', { force: true })}
+        />
+      </View>
     </View>
   );
 

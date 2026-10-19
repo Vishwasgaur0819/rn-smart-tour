@@ -3,13 +3,23 @@ import { AppState, Dimensions, Keyboard } from 'react-native';
 import { isTourEngine } from '../core/controller';
 import type { TourController } from '../core/controller';
 import { TourEngine } from '../core/TourEngine';
-import type { StorageAdapter, Tour } from '../types';
+import type { StorageAdapter, Tour, TourContext } from '../types';
 import { TourEngineContext } from './context';
 import { TourOverlay } from './TourOverlay';
 import type { TourOverlayProps } from './TourOverlay';
 
 interface CommonProps extends TourOverlayProps {
   children: React.ReactNode;
+  /**
+   * App state that tours check: a tour's `canStart` and a step's `when` receive it,
+   * e.g. `{ isOnline, isManager, hasDraftMtp }`.
+   */
+  context?: TourContext;
+  /**
+   * A tour's `canStart` refused a start requested with `startTour` (auto-starts are
+   * skipped silently). Show `reason` to the user, e.g. in a toast.
+   */
+  onStartBlocked?: (tour: Tour, reason: string) => void;
   /**
    * How long (ms) a step waits for its target to be on screen before the step's
    * `onMissingTarget` policy applies (by default the tour ends, unseen). Default: 3000.
@@ -43,6 +53,12 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   renderTooltip,
   tooltipWidth,
   backdropColor,
+  supportedOrientations,
+  presentation,
+  renderResumeChip,
+  highlightColor,
+  context,
+  onStartBlocked,
 }) => {
   const [engine] = useState(() => {
     if (!controller)
@@ -53,8 +69,8 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   });
 
   useLayoutEffect(() => {
-    engine.setOptions({ tours, missingTargetTimeoutMs });
-  }, [engine, tours, missingTargetTimeoutMs]);
+    engine.setOptions({ tours, missingTargetTimeoutMs, context, onStartBlocked });
+  }, [engine, tours, missingTargetTimeoutMs, context, onStartBlocked]);
 
   useEffect(() => {
     engine.loadStorage();
@@ -76,7 +92,15 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   return (
     <TourEngineContext.Provider value={engine}>
       {children}
-      <TourOverlay renderTooltip={renderTooltip} tooltipWidth={tooltipWidth} backdropColor={backdropColor} />
+      <TourOverlay
+        renderTooltip={renderTooltip}
+        tooltipWidth={tooltipWidth}
+        backdropColor={backdropColor}
+        supportedOrientations={supportedOrientations}
+        presentation={presentation}
+        renderResumeChip={renderResumeChip}
+        highlightColor={highlightColor}
+      />
     </TourEngineContext.Provider>
   );
 };

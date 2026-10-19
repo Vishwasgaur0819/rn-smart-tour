@@ -1,6 +1,6 @@
 import { TourEngine } from './TourEngine';
 import type { TourEngineState } from './TourEngine';
-import type { StartTourOptions, StorageAdapter, Tour } from '../types';
+import type { StartTourOptions, StorageAdapter, Tour, TourContext } from '../types';
 
 /** Tour actions and state, usable outside React (deep links, push notification handlers, …). */
 export interface TourController {
@@ -10,6 +10,10 @@ export interface TourController {
   prevStep: () => void;
   resetTour: (tourId: string) => void;
   resetAll: () => void;
+  /** Report that something happened, for steps with `advanceOn: { event }`. */
+  emit: (event: string) => void;
+  pauseTour: () => void;
+  resumeTour: () => void;
   getState: () => TourEngineState;
   subscribe: (listener: () => void) => () => void;
 }
@@ -19,6 +23,8 @@ export interface TourControllerOptions {
   /** Persists seen tours (AsyncStorage, MMKV, …). Read when the TourProvider mounts. */
   storageAdapter?: StorageAdapter;
   missingTargetTimeoutMs?: number;
+  context?: TourContext;
+  onStartBlocked?: (tour: Tour, reason: string) => void;
 }
 
 /**
@@ -35,8 +41,10 @@ export function createTourController({
   tours,
   storageAdapter,
   missingTargetTimeoutMs,
+  context,
+  onStartBlocked,
 }: TourControllerOptions): TourController {
-  return new TourEngine({ tours, storage: storageAdapter, missingTargetTimeoutMs });
+  return new TourEngine({ tours, storage: storageAdapter, missingTargetTimeoutMs, context, onStartBlocked });
 }
 
 export const isTourEngine = (controller: TourController): controller is TourEngine =>
