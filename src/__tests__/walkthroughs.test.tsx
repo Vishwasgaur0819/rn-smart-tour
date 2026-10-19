@@ -50,7 +50,7 @@ describe('engine', () => {
       },
     });
     engine.startTour('w');
-    expect(engine.getState().presented).toEqual({ tourId: 'w', stepIndex: 0, rect: null });
+    expect(engine.getState().presented).toEqual({ tourId: 'w', stepIndex: 0, rect: null, hostId: null });
 
     engine.registerTarget('a', handle());
     engine.nextStep();

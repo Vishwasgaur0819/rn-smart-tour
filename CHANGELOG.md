@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.5 — 2026-10-19
+
+Walkthroughs through forms and popups.
+
+### Added
+- `interactive: true` on steps: the highlighted element stays usable (type in a field, open a picker) and the step moves on with Next, or with `advanceOn: { event }`. The element gets the action ring; the rest of the screen stays blocked.
+- `TourOverlayHost`: wrap a modal's content in it, and steps whose target is inside are drawn inside the modal, above its content, with the provider's card and colors. The resume chip stays at the app root. Outside a `TourProvider` it renders just its children.
+- `TourTooltipProps.isInteractive`; the built-in card says "Use the highlighted item, then tap Next."
+- `PresentedStep.hostId`: the host a step is drawn in (`null` for the app root).
+
 ## 2.0.0-beta.4 — 2026-10-19
 
 Walkthroughs: "How do I…?" guidance through real tasks.

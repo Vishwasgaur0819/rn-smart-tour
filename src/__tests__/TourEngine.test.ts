@@ -59,7 +59,7 @@ describe('measuring', () => {
     engine.startTour('t');
     await advance(200);
     expect(view.measureInWindow).toHaveBeenCalled();
-    expect(engine.getState().presented).toEqual({ tourId: 't', stepIndex: 0, rect: RECT });
+    expect(engine.getState().presented).toEqual({ tourId: 't', stepIndex: 0, rect: RECT, hostId: null });
   });
 
   it('registering targets does not notify subscribers (no re-renders)', async () => {

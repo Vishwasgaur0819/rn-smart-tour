@@ -22,10 +22,17 @@ export interface ScrollableHandle {
   horizontal: boolean;
 }
 
+/** A `TourOverlayHost` (e.g. inside an app popup): steps on its targets are drawn there. */
+export interface HostHandle {
+  id: string;
+}
+
 export interface TargetHandle {
   ref: { current: any };
   scope: ScopeHandle | null;
   scrollable: ScrollableHandle | null;
+  /** The nearest `TourOverlayHost`; null/undefined: drawn by the provider's root overlay. */
+  host?: HostHandle | null;
 }
 
 /**
@@ -36,6 +43,8 @@ export interface PresentedStep {
   tourId: string;
   stepIndex: number;
   rect: Rect | null;
+  /** The `TourOverlayHost` that draws this step (its target is inside it), or null for the root overlay. */
+  hostId: string | null;
 }
 
 export interface TourEngineState {
@@ -543,7 +552,7 @@ export class TourEngine {
 
     if (!step.targetId) {
       // A centred card: nothing to find or measure.
-      this.store.setState({ presented: { tourId, stepIndex, rect: null } });
+      this.store.setState({ presented: { tourId, stepIndex, rect: null, hostId: null } });
       return;
     }
 
@@ -579,17 +588,19 @@ export class TourEngine {
     }
 
     cancelTimer(this.missingTimer);
+    const hostId = handle.host?.id ?? null;
     const { presented } = this.getState();
     if (
       presented &&
       presented.tourId === tourId &&
       presented.stepIndex === stepIndex &&
+      presented.hostId === hostId &&
       presented.rect &&
       isSameRect(presented.rect, rect)
     ) {
       return;
     }
-    this.store.setState({ presented: { tourId, stepIndex, rect } });
+    this.store.setState({ presented: { tourId, stepIndex, rect, hostId } });
   }
 
   private finish(markAsSeen: boolean) {

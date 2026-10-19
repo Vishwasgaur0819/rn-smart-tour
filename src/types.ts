@@ -26,6 +26,12 @@ export interface TourStep {
   position?: 'top' | 'bottom' | 'left' | 'right';
   /** Default: 'next'. */
   advanceOn?: StepAdvance;
+  /**
+   * Keep the highlighted element usable during the step (e.g. a form field the user
+   * fills in), while the step still moves on with Next (or its `advanceOn` event).
+   * Implied by `advanceOn: 'press'`.
+   */
+  interactive?: boolean;
   /** Show the step only when this returns true (checked as the step is reached). */
   when?: (context: TourContext) => boolean;
   /**
@@ -92,6 +98,8 @@ export interface TourTooltipProps {
    * reports an event): don't show a Next button, tell the user what to do instead.
    */
   isActionStep: boolean;
+  /** The highlighted element can be used during the step (e.g. a field to fill in). */
+  isInteractive: boolean;
   /** The step has no target and is drawn in the middle of the screen. */
   isCentered: boolean;
   /** Next step, or finish (and mark seen) on the last one. */

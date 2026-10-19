@@ -7,6 +7,8 @@ export type { TourScopeProps } from './react/TourScope';
 export { TourScrollable, TourScrollView } from './react/TourScrollable';
 export type { TourScrollableProps } from './react/TourScrollable';
 export { DefaultResumeChip, DefaultTooltip, TourOverlay } from './react/TourOverlay';
+export { TourOverlayHost } from './react/TourOverlayHost';
+export type { TourOverlayHostProps } from './react/TourOverlayHost';
 export type { ResumeChipProps, TourOverlayProps } from './react/TourOverlay';
 export { useTour, useTourCatalog, useTourState } from './react/hooks';
 export type { PresentedStep, TourEngineState } from './core/TourEngine';

@@ -1,10 +1,10 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { AppState, Dimensions, Keyboard } from 'react-native';
 import { isTourEngine } from '../core/controller';
 import type { TourController } from '../core/controller';
 import { TourEngine } from '../core/TourEngine';
 import type { StorageAdapter, Tour, TourContext } from '../types';
-import { TourEngineContext } from './context';
+import { TourEngineContext, TourOverlayConfigContext } from './context';
 import { TourOverlay } from './TourOverlay';
 import type { TourOverlayProps } from './TourOverlay';
 
@@ -89,18 +89,34 @@ export const TourProvider: React.FC<TourProviderProps> = ({
     return () => subscriptions.forEach(subscription => subscription.remove());
   }, [engine]);
 
+  // Shared with TourOverlayHosts, so steps inside app popups look the same.
+  const overlayConfig = useMemo(
+    () => ({
+      renderTooltip,
+      tooltipWidth,
+      backdropColor,
+      supportedOrientations,
+      presentation,
+      renderResumeChip,
+      highlightColor,
+    }),
+    [
+      renderTooltip,
+      tooltipWidth,
+      backdropColor,
+      supportedOrientations,
+      presentation,
+      renderResumeChip,
+      highlightColor,
+    ],
+  );
+
   return (
     <TourEngineContext.Provider value={engine}>
-      {children}
-      <TourOverlay
-        renderTooltip={renderTooltip}
-        tooltipWidth={tooltipWidth}
-        backdropColor={backdropColor}
-        supportedOrientations={supportedOrientations}
-        presentation={presentation}
-        renderResumeChip={renderResumeChip}
-        highlightColor={highlightColor}
-      />
+      <TourOverlayConfigContext.Provider value={overlayConfig}>
+        {children}
+        <TourOverlay />
+      </TourOverlayConfigContext.Provider>
     </TourEngineContext.Provider>
   );
 };

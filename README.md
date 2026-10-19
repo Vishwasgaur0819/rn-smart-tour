@@ -197,6 +197,8 @@ const TourCard = ({ step, stepIndex, stepCount, isFirstStep, isLastStep, next, p
   backdropColor="rgba(0, 0, 0, 0.6)">
 ```
 
+For walkthroughs, the props also tell the card what kind of step it is: `isActionStep` (the user taps the element or the app emits an event — hide Next), `isInteractive` (the element is usable, then Next) and `isCentered` (no target). `tour.kind` tells a walkthrough ("Exit") from a tour ("Skip").
+
 ### 9. "How do I…?" Walkthroughs (Optional)
 A walkthrough guides the user through a task in the real app — they tap the real buttons and the walkthrough follows along. Start it from a help list instead of automatically.
 
@@ -213,7 +215,7 @@ const TOURS = {
       { targetId: 'menu', title: 'Open the menu', description: '', advanceOn: 'press' },
       { targetId: 'leave', title: 'Tap Leave Management', description: '', advanceOn: 'press' },
       { targetId: 'apply', title: 'Tap Apply Leave', description: '', advanceOn: 'press' },
-      { targetId: 'leaveType', title: 'Pick the leave type', description: '' }, // Next button
+      { targetId: 'leaveType', title: 'Pick the leave type', description: '', interactive: true }, // usable, then Next
       { targetId: 'submit', title: 'Tap Submit Request', description: 'This sends a real request.', advanceOn: 'press' },
       { title: 'All done!', description: 'Track it under My Leave requests.' },
     ],
@@ -229,6 +231,7 @@ const TOURS = {
 
 - `advanceOn: 'press'` — the highlighted element stays tappable; the step moves on when the user taps it. The rest of the screen stays blocked.
 - `advanceOn: { event: 'leaveTypeChosen' }` — moves on when the app calls `emit('leaveTypeChosen')` (from `useTour()` or a controller).
+- `interactive: true` — for form fields: the highlighted element stays usable (type, pick a date, open a dropdown) and the step moves on with Next. Taps elsewhere stay blocked.
 - `when: ctx => …` — shows a step only when it applies (e.g. managers only); step counts skip hidden steps.
 - If the user leaves the path, a walkthrough **pauses** (instead of ending) and shows a "Resume" chip (`renderResumeChip` to draw your own). Resuming continues from the latest step whose element is on screen, so the user is guided back.
 
@@ -241,7 +244,24 @@ const { startTour } = useTour();
 <Button title={task.title} onPress={() => startTour(task.id, { force: true })} />
 ```
 
-### 10. Start Tours from Outside React (Optional)
+### 10. Steps Inside Popups (Optional)
+The overlay is drawn over your app, so the app's own modals open *above* it. To point a step at something inside a modal, wrap the modal's content in `TourOverlayHost`; steps whose target is inside it are drawn inside the modal.
+
+```tsx
+import { TourOverlayHost } from 'rn-smart-tour';
+
+<Modal visible={visible} transparent>
+  <TourOverlayHost>
+    <TourTarget name="endDay">
+      <Button title="End Day" onPress={endDay} />
+    </TourTarget>
+  </TourOverlayHost>
+</Modal>
+```
+
+Put it in your app's shared modal component once and every popup can host steps. It uses the provider's card, colors and width. Outside a `TourProvider` it just renders its children.
+
+### 11. Start Tours from Outside React (Optional)
 For deep links or notification handlers, create a controller and pass it to the provider:
 
 ```tsx
@@ -306,7 +326,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `renderTooltip` | `(props: TourTooltipProps) => ReactNode` | built-in card | Draws the tooltip card. Receives the step, its index and count, and `next` / `prev` / `skip`. |
 | `tooltipWidth` | `number` | `280` | Card width (capped to the screen). |
 | `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
-| `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal` (only for tours inside another Modal). |
+| `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal`. For steps inside the app's modals, prefer `TourOverlayHost`. |
 | `supportedOrientations` | `ModalProps['supportedOrientations']` | all | With `presentation="modal"`: iOS orientations the overlay allows (still limited by Info.plist). |
 | `context` | `Record<string, unknown>` | `{}` | App state that `canStart` and step `when` receive. |
 | `onStartBlocked` | `(tour, reason) => void` | — | A tour's `canStart` refused a `startTour` call; show `reason` to the user. |
@@ -332,6 +352,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `position` | `string` | `'bottom'` | `top`, `bottom`, `left`, `right`. |
 | `beforeEnter` | `() => void \| Promise<void>` | — | Runs (and is awaited) before the step looks for its target. |
 | `advanceOn` | `'next' \| 'press' \| { event }` | `'next'` | How the step moves on: Next button, a tap on the element, or an app event. |
+| `interactive` | `boolean` | `false` | The highlighted element stays usable (form fields); the step still moves on with Next (or `advanceOn`). |
 | `when` | `(context) => boolean` | — | Show the step only when this returns true. |
 | `onMissingTarget` | `'end' \| 'skip' \| 'pause'` | `'end'` (`'pause'` for walkthroughs) | What happens if the target isn't found in time. |
 | `targetTimeoutMs` | `number` | provider's | Per-step override of `missingTargetTimeoutMs`. |
@@ -342,6 +363,11 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `name` | `string` | Matches a `targetId` in a tour step. |
 | `children` | `ReactNode` | The UI element to wrap and highlight. |
 | `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
+
+### TourOverlayHost
+| Property | Type | Description |
+|:---|:---|:---|
+| `children` | `ReactNode` | A modal's content. Steps whose targets are inside are drawn here instead of over the app. |
 
 ### TourScope / NavigationTourScope
 | Component | Props | Description |
