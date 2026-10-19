@@ -275,6 +275,28 @@ export const tours = createTourController({ tours: TOURS, storageAdapter: mmkvAd
 tours.startTour('new-feature', { force: true });
 ```
 
+### 12. Analytics (Optional)
+Pass `onEvent` to see how tours perform: how many users finish each walkthrough, and at which step the others leave. Forward the events to your own backend or analytics tool.
+
+```tsx
+<TourProvider tours={TOURS} onEvent={event => analyticsQueue.push(event)}>
+```
+
+Every event has `type`, `runId` (the same for every event of one run of a tour, start to end), `tourId`, `tourKind` and `timestamp`, plus:
+
+| `type` | When | Extra fields |
+|:---|:---|:---|
+| `tour_started` | A tour starts | `trigger` (`'auto'` / `'manual'`), `stepCount` |
+| `step_shown` | A step appears (once per step visit, not on re-measures) | `stepIndex`, `stepNumber`, `stepCount`, `targetId` |
+| `tour_completed` | The last step is finished | `durationMs` |
+| `tour_exited` | The tour ends early | `reason`, `stepIndex`, `durationMs` |
+| `tour_blocked` | `canStart` refused a `startTour` | `reason` (the message) |
+| `tour_paused` | A walkthrough is put on hold | `reason` (`'app'` / `'target_missing'`), `stepIndex` |
+| `tour_resumed` | A paused tour continues | `stepIndex` |
+| `target_missing` | A step's element wasn't found in time | `stepIndex`, `targetId`, `outcome` (`'skip'` / `'pause'` / `'end'`) |
+
+`tour_exited` reasons: `'user'` (Skip / Exit, or ✕ on the resume chip), `'back_button'`, `'app'` (`stopTour`), `'target_missing'`, `'replaced'` (another tour started), `'removed'` (the tour was removed). An error thrown by `onEvent` is logged and never affects the tour.
+
 ---
 
 ## 🧠 Technical Architecture
@@ -330,6 +352,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `supportedOrientations` | `ModalProps['supportedOrientations']` | all | With `presentation="modal"`: iOS orientations the overlay allows (still limited by Info.plist). |
 | `context` | `Record<string, unknown>` | `{}` | App state that `canStart` and step `when` receive. |
 | `onStartBlocked` | `(tour, reason) => void` | — | A tour's `canStart` refused a `startTour` call; show `reason` to the user. |
+| `onEvent` | `(event: TourEvent) => void` | — | Analytics: every start, step shown, completion, exit (and why), block, pause, resume and missing target. See [Analytics](#12-analytics-optional). |
 | `renderResumeChip` | `(props: ResumeChipProps) => ReactNode` | built-in chip | Draws the "Resume" chip shown while a tour is paused (`tour`, `resume`, `dismiss`). |
 | `highlightColor` | `string` | `'#FFFFFF'` | Ring around an element the user should tap. |
 

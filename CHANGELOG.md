@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased (2.1)
+
+### Added
+- Analytics: `onEvent` on `TourProvider` and `createTourController` receives a `TourEvent` for every tour start (auto or manual), step shown, completion, exit (with the reason: user, back button, app, missing target, replaced, removed), blocked start, pause, resume and missing target. Events of one run share a `runId`; completions and exits include `durationMs`. A throwing handler never affects the tour.
+
+### Fixed
+- `TourProvider` no longer clears a controller's `onStartBlocked` when the provider doesn't pass one.
+
 ## 2.0.0-beta.5 — 2026-10-19
 
 Walkthroughs through forms and popups.

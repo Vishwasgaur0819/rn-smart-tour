@@ -126,6 +126,90 @@ export interface TourCatalogEntry {
   kind: 'tour' | 'walkthrough';
 }
 
+/** Why a tour ended without being completed. */
+export type TourExitReason =
+  /** Skip / Exit on the card, or ✕ on the resume chip. */
+  | 'user'
+  /** The Android back button. */
+  | 'back_button'
+  /** The app called `stopTour`. */
+  | 'app'
+  /** A step's element wasn't found in time (`onMissingTarget: 'end'`). */
+  | 'target_missing'
+  /** Another tour was started while this one was running. */
+  | 'replaced'
+  /** The tour was removed from `tours`. */
+  | 'removed';
+
+/**
+ * Something that happened in a tour, for analytics (`onEvent`). Events of one
+ * run of a tour share a `runId`, so a backend can build funnels: started →
+ * step_shown (each step) → completed or exited (and where).
+ */
+export type TourEvent = {
+  /** Same for every event of one run of a tour (start to end). */
+  runId: string;
+  tourId: string;
+  tourKind: 'tour' | 'walkthrough';
+  /** When it happened (ms since epoch). */
+  timestamp: number;
+} & (
+  | {
+      type: 'tour_started';
+      /** Started on its own (`autoStart`) or by the app (`startTour`). */
+      trigger: 'auto' | 'manual';
+      /** Number of steps shown in this run (steps whose `when` is false don't count). */
+      stepCount: number;
+    }
+  | {
+      type: 'step_shown';
+      /** Index in `tour.steps`. */
+      stepIndex: number;
+      /** 1-based position among the steps shown, out of `stepCount`. */
+      stepNumber: number;
+      stepCount: number;
+      /** Absent for a centred step. */
+      targetId?: string;
+    }
+  | {
+      type: 'tour_completed';
+      /** From start to end of the run. */
+      durationMs: number;
+    }
+  | {
+      type: 'tour_exited';
+      reason: TourExitReason;
+      /** The step the user was on. */
+      stepIndex: number;
+      durationMs: number;
+    }
+  | {
+      /** `startTour` was refused by the tour's `canStart`. */
+      type: 'tour_blocked';
+      reason: string;
+    }
+  | {
+      type: 'tour_paused';
+      /** `pauseTour` was called, or the step's element went missing (`onMissingTarget: 'pause'`). */
+      reason: 'app' | 'target_missing';
+      stepIndex: number;
+    }
+  | {
+      type: 'tour_resumed';
+      /** The step it continues from. */
+      stepIndex: number;
+    }
+  | {
+      /** A step's element wasn't found in time; `outcome` is what the tour did about it. */
+      type: 'target_missing';
+      stepIndex: number;
+      targetId: string;
+      outcome: 'skip' | 'pause' | 'end';
+    }
+);
+
+export type TourEventType = TourEvent['type'];
+
 export interface TourApi {
   startTour: (tourId: string, options?: StartTourOptions) => void;
   stopTour: (markAsSeen?: boolean) => void;

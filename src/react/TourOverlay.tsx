@@ -114,7 +114,7 @@ const ResumeChipHost = ({
   const chipProps: ResumeChipProps = {
     tour,
     resume: engine.resumeTour,
-    dismiss: () => engine.stopTour(false),
+    dismiss: () => engine.stopTour(false, 'user'),
   };
   return (
     <View pointerEvents="box-none" style={styles.chipHost} testID="rn-smart-tour-resume-chip">
@@ -165,7 +165,7 @@ const OverlayContent = ({
   useEffect(() => {
     if (!isRoot || isHost) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      engine.stopTour();
+      engine.stopTour(true, 'back_button');
       return true;
     });
     return () => subscription.remove();
@@ -203,7 +203,7 @@ const OverlayContent = ({
     prev: () => {
       if (isSettled) engine.prevStep();
     },
-    skip: () => engine.stopTour(),
+    skip: () => engine.stopTour(true, 'user'),
   };
 
   const backdrop = [styles.backdrop, { backgroundColor: backdropColor }];
@@ -300,7 +300,7 @@ const OverlayContent = ({
       visible
       animationType="none"
       supportedOrientations={supportedOrientations}
-      onRequestClose={() => engine.stopTour()}>
+      onRequestClose={() => engine.stopTour(true, 'back_button')}>
       {layer}
     </Modal>
   );

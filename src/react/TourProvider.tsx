@@ -3,7 +3,7 @@ import { AppState, Dimensions, Keyboard } from 'react-native';
 import { isTourEngine } from '../core/controller';
 import type { TourController } from '../core/controller';
 import { TourEngine } from '../core/TourEngine';
-import type { StorageAdapter, Tour, TourContext } from '../types';
+import type { StorageAdapter, Tour, TourContext, TourEvent } from '../types';
 import { TourEngineContext, TourOverlayConfigContext } from './context';
 import { TourOverlay } from './TourOverlay';
 import type { TourOverlayProps } from './TourOverlay';
@@ -20,6 +20,12 @@ interface CommonProps extends TourOverlayProps {
    * skipped silently). Show `reason` to the user, e.g. in a toast.
    */
   onStartBlocked?: (tour: Tour, reason: string) => void;
+  /**
+   * Analytics: called for everything that happens in a tour — started, each step
+   * shown, completed, exited (and why), blocked, paused, resumed, target missing.
+   * Forward the events to your analytics backend.
+   */
+  onEvent?: (event: TourEvent) => void;
   /**
    * How long (ms) a step waits for its target to be on screen before the step's
    * `onMissingTarget` policy applies (by default the tour ends, unseen). Default: 3000.
@@ -59,6 +65,7 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   highlightColor,
   context,
   onStartBlocked,
+  onEvent,
 }) => {
   const [engine] = useState(() => {
     if (!controller)
@@ -69,8 +76,15 @@ export const TourProvider: React.FC<TourProviderProps> = ({
   });
 
   useLayoutEffect(() => {
-    engine.setOptions({ tours, missingTargetTimeoutMs, context, onStartBlocked });
-  }, [engine, tours, missingTargetTimeoutMs, context, onStartBlocked]);
+    engine.setOptions({
+      tours,
+      missingTargetTimeoutMs,
+      context,
+      // Only when passed: a controller may have its own (from createTourController).
+      ...(onStartBlocked && { onStartBlocked }),
+      ...(onEvent && { onEvent }),
+    });
+  }, [engine, tours, missingTargetTimeoutMs, context, onStartBlocked, onEvent]);
 
   useEffect(() => {
     engine.loadStorage();
