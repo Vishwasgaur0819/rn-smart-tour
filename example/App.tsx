@@ -6,13 +6,13 @@
  * auto-scroll inside a FlatList, a tour that moves between screens, a step whose
  * target is missing, and two screens that both have a target named "title".
  */
-import { useRef } from 'react';
-import { FlatList, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { FlatList, Modal, Pressable, StatusBar, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { TourProvider, TourScrollable, TourTarget, useTour } from 'rn-smart-tour';
-import type { StorageAdapter, Tour } from 'rn-smart-tour';
+import { TourOverlayHost, TourProvider, TourScrollable, TourTarget, useTour } from 'rn-smart-tour';
+import type { StorageAdapter, Tour, TourEvent } from 'rn-smart-tour';
 import { NavigationTourScope } from 'rn-smart-tour/react-navigation';
 
 type RootStack = { Home: undefined; Details: undefined };
@@ -70,6 +70,22 @@ const TOURS: Record<string, Tour> = {
       { title: 'All done!', description: 'You opened the details screen yourself.' },
     ],
   },
+  popupDemo: {
+    id: 'popupDemo',
+    kind: 'walkthrough',
+    title: 'Confirm something in a popup',
+    steps: [
+      { targetId: 'open-popup', title: 'Tap Open popup', description: '', advanceOn: 'press' },
+      {
+        targetId: 'popup-note',
+        title: 'Type a note',
+        description: 'This step is drawn inside the popup.',
+        interactive: true,
+      },
+      { targetId: 'popup-confirm', title: 'Tap Confirm', description: '', advanceOn: 'press' },
+      { title: 'All done!', description: 'The popup closed and the walkthrough followed.' },
+    ],
+  },
   broken: {
     id: 'broken',
     steps: [
@@ -105,9 +121,29 @@ const Status = () => {
 
 const ROWS = Array.from({ length: 30 }, (_, i) => i + 1);
 
+/** A popup (React Native Modal) whose content tours can highlight, thanks to TourOverlayHost. */
+const DemoPopup = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => (
+  <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <TourOverlayHost>
+      <View style={styles.popupBackdrop}>
+        <View style={styles.popupCard}>
+          <Text style={styles.title}>Popup</Text>
+          <TourTarget name="popup-note">
+            <TextInput testID="popup-note" placeholder="Note" style={styles.popupInput} />
+          </TourTarget>
+          <TourTarget name="popup-confirm">
+            <Button testID="popup-confirm" label="Confirm" onPress={onClose} />
+          </TourTarget>
+        </View>
+      </View>
+    </TourOverlayHost>
+  </Modal>
+);
+
 const HomeScreen = () => {
   const { startTour, resetAll } = useTour();
   const listRef = useRef<FlatList<number>>(null);
+  const [popupVisible, setPopupVisible] = useState(false);
 
   const header = (
     <View style={styles.controls}>
@@ -136,6 +172,17 @@ const HomeScreen = () => {
           onPress={() => startTour('openDetails', { force: true })}
         />
       </View>
+      <View style={styles.row}>
+        <TourTarget name="open-popup">
+          <Button testID="open-popup" label="Open popup" onPress={() => setPopupVisible(true)} />
+        </TourTarget>
+        <Button
+          testID="start-popup-walkthrough"
+          label="Popup walkthrough"
+          onPress={() => startTour('popupDemo', { force: true })}
+        />
+      </View>
+      <DemoPopup visible={popupVisible} onClose={() => setPopupVisible(false)} />
     </View>
   );
 
@@ -200,11 +247,21 @@ const DetailsScreen = () => {
   );
 };
 
+/** Analytics: an app would send these to its backend (see "Analytics" in the README). */
+const logTourEvent = (event: TourEvent) => {
+  const { type, tourId, runId, timestamp: _timestamp, tourKind: _kind, ...details } = event;
+  console.log(`[tour event] ${type} ${tourId} run=${runId} ${JSON.stringify(details)}`);
+};
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      <TourProvider tours={TOURS} storageAdapter={storage} missingTargetTimeoutMs={2000}>
+      <TourProvider
+        tours={TOURS}
+        storageAdapter={storage}
+        missingTargetTimeoutMs={2000}
+        onEvent={logTourEvent}>
         <NavigationContainer ref={navigationRef}>
           <Stack.Navigator>
             <Stack.Screen name="Home" component={HomeScreen} />
@@ -236,4 +293,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', padding: 24, borderRadius: 10 },
   rowCard: { backgroundColor: '#e7e9ec', padding: 20, borderRadius: 10 },
   highlightRow: { borderWidth: 2, borderColor: '#0a66c2', backgroundColor: '#fff' },
+  popupBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
+  popupCard: { backgroundColor: '#fff', borderRadius: 12, padding: 20, width: 300, gap: 12 },
+  popupInput: { borderWidth: 1, borderColor: '#ccd', borderRadius: 8, padding: 10 },
 });

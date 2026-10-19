@@ -15,7 +15,11 @@
 - 📜 **Auto-Scroll**: Works with `ScrollView`, `FlatList` and `SectionList`; each target scrolls its own nearest list.
 - ⚡ **No Re-Render Cost**: Mounting and measuring targets re-renders nothing; components subscribe only to the tour state they use.
 - 💾 **Seen State Caching**: Persistent "only-once" logic with pluggable storage (AsyncStorage, MMKV, etc.).
-- 🛟 **Never Gets Stuck**: If a step's target isn't on screen in time, the tour ends (or skips the step) instead of leaving an invisible, active tour.
+- 🛟 **Never Gets Stuck**: If a step's target isn't on screen in time, the tour ends, skips the step, or (walkthroughs) pauses with a Resume chip — never an invisible, active tour.
+- 🙋 **"How do I…?" Walkthroughs**: Guide users through real tasks — they tap the real buttons and fill in the real form — with a searchable help list.
+- 🪟 **Works With Your Popups**: The tour is drawn over the app, your modals open above it, and steps can point inside them.
+- 🎨 **Your Design**: Render the card and resume chip with your own components and theme.
+- 📊 **Analytics**: One callback reports starts, steps, completions, exits (and why) for funnels in your own backend.
 - 🔁 **Replay on Demand**: `startTour(id, { force: true })`, `resetTour(id)` and `resetAll()`, from components or from outside React.
 
 ---
@@ -23,8 +27,8 @@
 ## 📦 Installation
 
 ```sh
-npm install rn-smart-tour@next   # 2.0 beta (this README)
-npm install rn-smart-tour        # 1.x (stable)
+npm install rn-smart-tour@next   # 2.0 release candidate (this README)
+npm install rn-smart-tour        # 1.x (stable, until 2.0.0)
 ```
 
 Requires React 18+ and React Native 0.73+. No native code, so no `pod install` or rebuild is needed. React Navigation (6+) is optional.
@@ -197,6 +201,8 @@ const TourCard = ({ step, stepIndex, stepCount, isFirstStep, isLastStep, next, p
   backdropColor="rgba(0, 0, 0, 0.6)">
 ```
 
+For walkthroughs, the props also tell the card what kind of step it is: `isActionStep` (the user taps the element or the app emits an event — hide Next), `isInteractive` (the element is usable, then Next) and `isCentered` (no target). `tour.kind` tells a walkthrough ("Exit") from a tour ("Skip").
+
 ### 9. "How do I…?" Walkthroughs (Optional)
 A walkthrough guides the user through a task in the real app — they tap the real buttons and the walkthrough follows along. Start it from a help list instead of automatically.
 
@@ -213,7 +219,7 @@ const TOURS = {
       { targetId: 'menu', title: 'Open the menu', description: '', advanceOn: 'press' },
       { targetId: 'leave', title: 'Tap Leave Management', description: '', advanceOn: 'press' },
       { targetId: 'apply', title: 'Tap Apply Leave', description: '', advanceOn: 'press' },
-      { targetId: 'leaveType', title: 'Pick the leave type', description: '' }, // Next button
+      { targetId: 'leaveType', title: 'Pick the leave type', description: '', interactive: true }, // usable, then Next
       { targetId: 'submit', title: 'Tap Submit Request', description: 'This sends a real request.', advanceOn: 'press' },
       { title: 'All done!', description: 'Track it under My Leave requests.' },
     ],
@@ -229,6 +235,7 @@ const TOURS = {
 
 - `advanceOn: 'press'` — the highlighted element stays tappable; the step moves on when the user taps it. The rest of the screen stays blocked.
 - `advanceOn: { event: 'leaveTypeChosen' }` — moves on when the app calls `emit('leaveTypeChosen')` (from `useTour()` or a controller).
+- `interactive: true` — for form fields: the highlighted element stays usable (type, pick a date, open a dropdown) and the step moves on with Next. Taps elsewhere stay blocked.
 - `when: ctx => …` — shows a step only when it applies (e.g. managers only); step counts skip hidden steps.
 - If the user leaves the path, a walkthrough **pauses** (instead of ending) and shows a "Resume" chip (`renderResumeChip` to draw your own). Resuming continues from the latest step whose element is on screen, so the user is guided back.
 
@@ -241,7 +248,24 @@ const { startTour } = useTour();
 <Button title={task.title} onPress={() => startTour(task.id, { force: true })} />
 ```
 
-### 10. Start Tours from Outside React (Optional)
+### 10. Steps Inside Popups (Optional)
+The overlay is drawn over your app, so the app's own modals open *above* it. To point a step at something inside a modal, wrap the modal's content in `TourOverlayHost`; steps whose target is inside it are drawn inside the modal.
+
+```tsx
+import { TourOverlayHost } from 'rn-smart-tour';
+
+<Modal visible={visible} transparent>
+  <TourOverlayHost>
+    <TourTarget name="endDay">
+      <Button title="End Day" onPress={endDay} />
+    </TourTarget>
+  </TourOverlayHost>
+</Modal>
+```
+
+Put it in your app's shared modal component once and every popup can host steps. It uses the provider's card, colors and width. Outside a `TourProvider` it just renders its children.
+
+### 11. Start Tours from Outside React (Optional)
 For deep links or notification handlers, create a controller and pass it to the provider:
 
 ```tsx
@@ -254,6 +278,28 @@ export const tours = createTourController({ tours: TOURS, storageAdapter: mmkvAd
 // anywhere:
 tours.startTour('new-feature', { force: true });
 ```
+
+### 12. Analytics (Optional)
+Pass `onEvent` to see how tours perform: how many users finish each walkthrough, and at which step the others leave. Forward the events to your own backend or analytics tool.
+
+```tsx
+<TourProvider tours={TOURS} onEvent={event => analyticsQueue.push(event)}>
+```
+
+Every event has `type`, `runId` (the same for every event of one run of a tour, start to end), `tourId`, `tourKind` and `timestamp`, plus:
+
+| `type` | When | Extra fields |
+|:---|:---|:---|
+| `tour_started` | A tour starts | `trigger` (`'auto'` / `'manual'`), `stepCount` |
+| `step_shown` | A step appears (once per step visit, not on re-measures) | `stepIndex`, `stepNumber`, `stepCount`, `targetId` |
+| `tour_completed` | The last step is finished | `durationMs` |
+| `tour_exited` | The tour ends early | `reason`, `stepIndex`, `durationMs` |
+| `tour_blocked` | `canStart` refused a `startTour` | `reason` (the message) |
+| `tour_paused` | A walkthrough is put on hold | `reason` (`'app'` / `'target_missing'`), `stepIndex` |
+| `tour_resumed` | A paused tour continues | `stepIndex` |
+| `target_missing` | A step's element wasn't found in time | `stepIndex`, `targetId`, `outcome` (`'skip'` / `'pause'` / `'end'`) |
+
+`tour_exited` reasons: `'user'` (Skip / Exit, or ✕ on the resume chip), `'back_button'`, `'app'` (`stopTour`), `'target_missing'`, `'replaced'` (another tour started), `'removed'` (the tour was removed). An error thrown by `onEvent` is logged and never affects the tour.
 
 ---
 
@@ -286,7 +332,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 <summary><b>Tour Lifecycle Rules</b></summary>
 
 - **Skip**, **Finish** and the **Android back button** end the tour and mark it as seen.
-- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**, or the step's `targetTimeoutMs`), the tour ends **without** being marked as seen, or moves to the next step with `onMissingTarget: 'skip'`. A warning is logged in development.
+- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**, or the step's `targetTimeoutMs`), the tour ends **without** being marked as seen, moves to the next step with `onMissingTarget: 'skip'`, or pauses with a Resume chip with `onMissingTarget: 'pause'` (the default for walkthroughs). A warning is logged in development.
 - If the target of the step being shown disappears (unmounts, or its screen loses focus), the step is hidden until it comes back, within the same timeout.
 - While moving to the next step, the current one stays on screen until the next target is measured, and extra taps on **Next** are ignored.
 
@@ -306,10 +352,11 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `renderTooltip` | `(props: TourTooltipProps) => ReactNode` | built-in card | Draws the tooltip card. Receives the step, its index and count, and `next` / `prev` / `skip`. |
 | `tooltipWidth` | `number` | `280` | Card width (capped to the screen). |
 | `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
-| `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal` (only for tours inside another Modal). |
+| `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal`. For steps inside the app's modals, prefer `TourOverlayHost`. |
 | `supportedOrientations` | `ModalProps['supportedOrientations']` | all | With `presentation="modal"`: iOS orientations the overlay allows (still limited by Info.plist). |
 | `context` | `Record<string, unknown>` | `{}` | App state that `canStart` and step `when` receive. |
 | `onStartBlocked` | `(tour, reason) => void` | — | A tour's `canStart` refused a `startTour` call; show `reason` to the user. |
+| `onEvent` | `(event: TourEvent) => void` | — | Analytics: every start, step shown, completion, exit (and why), block, pause, resume and missing target. See [Analytics](#12-analytics-optional). |
 | `renderResumeChip` | `(props: ResumeChipProps) => ReactNode` | built-in chip | Draws the "Resume" chip shown while a tour is paused (`tour`, `resume`, `dismiss`). |
 | `highlightColor` | `string` | `'#FFFFFF'` | Ring around an element the user should tap. |
 
@@ -332,6 +379,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `position` | `string` | `'bottom'` | `top`, `bottom`, `left`, `right`. |
 | `beforeEnter` | `() => void \| Promise<void>` | — | Runs (and is awaited) before the step looks for its target. |
 | `advanceOn` | `'next' \| 'press' \| { event }` | `'next'` | How the step moves on: Next button, a tap on the element, or an app event. |
+| `interactive` | `boolean` | `false` | The highlighted element stays usable (form fields); the step still moves on with Next (or `advanceOn`). |
 | `when` | `(context) => boolean` | — | Show the step only when this returns true. |
 | `onMissingTarget` | `'end' \| 'skip' \| 'pause'` | `'end'` (`'pause'` for walkthroughs) | What happens if the target isn't found in time. |
 | `targetTimeoutMs` | `number` | provider's | Per-step override of `missingTargetTimeoutMs`. |
@@ -342,6 +390,11 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `name` | `string` | Matches a `targetId` in a tour step. |
 | `children` | `ReactNode` | The UI element to wrap and highlight. |
 | `...props` | `ViewProps` | All standard React Native `View` props are forwarded. |
+
+### TourOverlayHost
+| Property | Type | Description |
+|:---|:---|:---|
+| `children` | `ReactNode` | A modal's content. Steps whose targets are inside are drawn here instead of over the app. |
 
 ### TourScope / NavigationTourScope
 | Component | Props | Description |
@@ -383,6 +436,15 @@ Behaviour changes:
 - A step appears a few frames after it starts (once its target has stopped moving), not immediately.
 - `useDap().targets` only contains the measurement of the step being shown, and `requestScroll` does nothing; scrolling is automatic.
 - Wrap screens in `NavigationTourScope` (or `TourScope`) to stop targets on background screens from being used.
+- `TourProvider` must wrap the whole app: the overlay is now drawn as a layer over its children instead of in a `Modal`, so the app's own modals open above it. To point a step inside one of your modals, wrap the modal's content in `TourOverlayHost`.
+
+---
+
+## ⚠️ Known Limitations
+
+- **Nested lists**: only a target's nearest scroll container is scrolled. A target in a horizontal row inside a vertical list is brought into view sideways, but the outer list doesn't scroll to the row.
+- **Sliding elements**: a target moved by a transform animation (a drawer or sheet sliding in) is measured once it holds still for 3 frames, or after 600 ms. Put such targets in a `TourScope` that becomes active once the animation has finished (e.g. a drawer's progress reaching 1).
+- **Virtualized lists**: `FlatList` items that aren't rendered yet can't be highlighted.
 
 ---
 

@@ -2,7 +2,7 @@ import React, { useCallback, useContext, useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import type { GestureResponderEvent, LayoutChangeEvent, ViewProps } from 'react-native';
 import { PRESS_SLOP } from '../core/TourEngine';
-import { TourEngineContext, TourScopeContext, TourScrollableContext } from './context';
+import { TourEngineContext, TourHostContext, TourScopeContext, TourScrollableContext } from './context';
 
 export interface TourTargetProps extends ViewProps {
   /** Matches `targetId` in a tour step. */
@@ -25,12 +25,13 @@ export const TourTarget: React.FC<TourTargetProps> = ({
   const engine = useContext(TourEngineContext);
   const scope = useContext(TourScopeContext);
   const scrollable = useContext(TourScrollableContext);
+  const host = useContext(TourHostContext);
   const viewRef = useRef<View>(null);
 
   useEffect(() => {
     if (!engine) return;
-    return engine.registerTarget(name, { ref: viewRef, scope, scrollable });
-  }, [engine, name, scope, scrollable]);
+    return engine.registerTarget(name, { ref: viewRef, scope, scrollable, host });
+  }, [engine, name, scope, scrollable, host]);
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {

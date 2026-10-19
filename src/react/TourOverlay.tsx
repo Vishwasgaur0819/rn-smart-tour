@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
@@ -12,6 +12,7 @@ import {
 import type { LayoutChangeEvent, ModalProps } from 'react-native';
 import type { PresentedStep, TourEngineState } from '../core/TourEngine';
 import type { Tour, TourTooltipProps } from '../types';
+import { TourOverlayConfigContext } from './context';
 import { useTourEngine, useTourState } from './hooks';
 import { placeTooltip } from './placement';
 
@@ -84,10 +85,19 @@ const selectOverlay = (state: TourEngineState) => ({
     state.presented.stepIndex === state.stepIndex,
 });
 
-export const TourOverlay = (props: TourOverlayProps) => {
+/**
+ * Draws the current step. `TourProvider` renders the root one; a `TourOverlayHost`
+ * renders one inside an app popup (`hostId`) for steps whose target is in it.
+ * Settings come from the provider unless passed directly.
+ */
+export const TourOverlay = ({ hostId, ...ownProps }: TourOverlayProps & { hostId?: string }) => {
+  const props = { ...useContext(TourOverlayConfigContext), ...ownProps };
   const { presented, isSettled, pausedTourId } = useTourState(selectOverlay);
-  if (pausedTourId) return <ResumeChipHost tourId={pausedTourId} renderResumeChip={props.renderResumeChip} />;
-  return presented ? <OverlayContent {...props} presented={presented} isSettled={isSettled} /> : null;
+  if (pausedTourId) {
+    return hostId ? null : <ResumeChipHost tourId={pausedTourId} renderResumeChip={props.renderResumeChip} />;
+  }
+  if (!presented || presented.hostId !== (hostId ?? null)) return null;
+  return <OverlayContent {...props} hostId={hostId} presented={presented} isSettled={isSettled} />;
 };
 
 /** Shown while a tour is paused: lets the user pick it up again, or drop it. */
@@ -104,7 +114,7 @@ const ResumeChipHost = ({
   const chipProps: ResumeChipProps = {
     tour,
     resume: engine.resumeTour,
-    dismiss: () => engine.stopTour(false),
+    dismiss: () => engine.stopTour(false, 'user'),
   };
   return (
     <View pointerEvents="box-none" style={styles.chipHost} testID="rn-smart-tour-resume-chip">
@@ -122,10 +132,13 @@ const OverlayContent = ({
   supportedOrientations = ALL_ORIENTATIONS,
   presentation = 'root',
   highlightColor = DEFAULT_HIGHLIGHT_COLOR,
-}: TourOverlayProps & { presented: PresentedStep; isSettled: boolean }) => {
+  hostId,
+}: TourOverlayProps & { presented: PresentedStep; isSettled: boolean; hostId?: string }) => {
   const engine = useTourEngine();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const isRoot = presentation === 'root';
+  // A host draws in the popup it sits in, like the root layer draws over the app.
+  const isHost = !!hostId;
+  const isRoot = isHost || presentation === 'root';
 
   // Target rects are window-relative. A Modal starts at the window's origin; the root
   // layer measures where it starts (normally also the origin) and draws relative to that.
@@ -148,14 +161,15 @@ const OverlayContent = ({
   }, [opacity, isPositioned]);
 
   // The root layer has no Modal onRequestClose: the Android back button dismisses the tour, like "Skip".
+  // (Inside a host, the popup's own Modal handles the back button.)
   useEffect(() => {
-    if (!isRoot) return;
+    if (!isRoot || isHost) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      engine.stopTour();
+      engine.stopTour(true, 'back_button');
       return true;
     });
     return () => subscription.remove();
-  }, [engine, isRoot]);
+  }, [engine, isRoot, isHost]);
 
   const activeTour = engine.getTour(presented.tourId);
   const step = activeTour?.steps[presented.stepIndex];
@@ -166,11 +180,11 @@ const OverlayContent = ({
   const shownIndex = Math.max(0, shownSteps.indexOf(presented.stepIndex));
   const stepCount = shownSteps.length || activeTour.steps.length;
 
-  // An action step lets taps through to its target. Not possible from inside a
-  // Modal (it covers the app), so there it falls back to a Next button.
+  // Action and fill-in steps let taps through to their target. Not possible from
+  // inside presentation="modal" (it covers the app), so there they fall back to Next.
   const advanceOn = step.advanceOn ?? 'next';
-  const tapsThrough = isRoot && advanceOn === 'press' && !!presented.rect;
-  const isActionStep = tapsThrough || typeof advanceOn === 'object';
+  const tapsThrough = isRoot && !!presented.rect && (advanceOn === 'press' || !!step.interactive);
+  const isActionStep = (tapsThrough && advanceOn === 'press') || typeof advanceOn === 'object';
 
   const tooltipProps: TourTooltipProps = {
     tour: activeTour,
@@ -180,6 +194,7 @@ const OverlayContent = ({
     isFirstStep: shownIndex === 0,
     isLastStep: shownIndex === stepCount - 1,
     isActionStep,
+    isInteractive: tapsThrough && advanceOn !== 'press',
     isCentered: !presented.rect,
     // Ignore taps while moving between steps, so one tap never advances twice.
     next: () => {
@@ -188,7 +203,7 @@ const OverlayContent = ({
     prev: () => {
       if (isSettled) engine.prevStep();
     },
-    skip: () => engine.stopTour(),
+    skip: () => engine.stopTour(true, 'user'),
   };
 
   const backdrop = [styles.backdrop, { backgroundColor: backdropColor }];
@@ -207,7 +222,7 @@ const OverlayContent = ({
     // let them through to the app.
     <Animated.View
       ref={layerRef}
-      testID="rn-smart-tour-overlay"
+      testID={isHost ? 'rn-smart-tour-host-overlay' : 'rn-smart-tour-overlay'}
       onLayout={isRoot ? measureOrigin : undefined}
       accessibilityViewIsModal
       pointerEvents="box-none"
@@ -285,7 +300,7 @@ const OverlayContent = ({
       visible
       animationType="none"
       supportedOrientations={supportedOrientations}
-      onRequestClose={() => engine.stopTour()}>
+      onRequestClose={() => engine.stopTour(true, 'back_button')}>
       {layer}
     </Modal>
   );
@@ -341,6 +356,7 @@ export const DefaultTooltip = ({
   isFirstStep,
   isLastStep,
   isActionStep,
+  isInteractive,
   next,
   prev,
   skip,
@@ -350,6 +366,8 @@ export const DefaultTooltip = ({
     <Text style={styles.description}>{step.description}</Text>
     {step.advanceOn === 'press' && isActionStep ? (
       <Text style={styles.actionHint}>Tap the highlighted item to continue.</Text>
+    ) : isInteractive && !isActionStep ? (
+      <Text style={styles.actionHint}>Use the highlighted item, then tap Next.</Text>
     ) : null}
 
     {/* Step indicator */}

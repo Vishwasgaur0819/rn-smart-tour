@@ -1,6 +1,6 @@
 import { TourEngine } from './TourEngine';
 import type { TourEngineState } from './TourEngine';
-import type { StartTourOptions, StorageAdapter, Tour, TourContext } from '../types';
+import type { StartTourOptions, StorageAdapter, Tour, TourContext, TourEvent } from '../types';
 
 /** Tour actions and state, usable outside React (deep links, push notification handlers, …). */
 export interface TourController {
@@ -25,6 +25,8 @@ export interface TourControllerOptions {
   missingTargetTimeoutMs?: number;
   context?: TourContext;
   onStartBlocked?: (tour: Tour, reason: string) => void;
+  /** Analytics: called for everything that happens in a tour (see `TourEvent`). */
+  onEvent?: (event: TourEvent) => void;
 }
 
 /**
@@ -43,8 +45,16 @@ export function createTourController({
   missingTargetTimeoutMs,
   context,
   onStartBlocked,
+  onEvent,
 }: TourControllerOptions): TourController {
-  return new TourEngine({ tours, storage: storageAdapter, missingTargetTimeoutMs, context, onStartBlocked });
+  return new TourEngine({
+    tours,
+    storage: storageAdapter,
+    missingTargetTimeoutMs,
+    context,
+    onStartBlocked,
+    onEvent,
+  });
 }
 
 export const isTourEngine = (controller: TourController): controller is TourEngine =>

@@ -2,6 +2,47 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-rc.0 — 2026-10-19
+
+Release candidate for 2.0.0, published under `next` (`npm install rn-smart-tour@next`). `latest` stays on 1.1.0 until 2.0.0. The API is frozen: only fixes until 2.0.0. This entry sums up 2.0 compared with 1.x; the betas below have the details.
+
+Checked on an Android device (React Native 0.88, New Architecture) with this build: auto-start tour, cross-screen step, popup walkthrough (fill-in step inside a Modal) and the analytics events (completed and target-missing runs). Earlier betas were also checked on iOS (React Native 0.88 and 0.81).
+
+### Highlights
+- **Reliable highlights.** A target is measured when its step starts — after scrolling it into view and once it stops moving — and re-measured on layout, rotation, keyboard and app-resume. Screens kept mounted in the background never count (`TourScope`, `NavigationTourScope` for React Navigation), and steps wait for screen transitions to finish.
+- **Drawn over the app, not in a Modal.** The app's own popups open above the tour; steps can also point inside popups (`TourOverlayHost`). No more iOS orientation crashes or one-modal-at-a-time conflicts.
+- **Walkthroughs ("How do I…?").** `kind: 'walkthrough'`: steps that wait for a tap on the element (`advanceOn: 'press'`) or an app event, fill-in steps (`interactive`), centred cards, pause with a Resume chip when the user leaves the path, `canStart` / `when` checks against app `context`, and `useTourCatalog` for a searchable help list.
+- **Your own design.** `renderTooltip`, `renderResumeChip`, `tooltipWidth`, `backdropColor`, `highlightColor`; the card is placed from its measured height.
+- **Analytics.** `onEvent` reports every start, step shown, completion, exit (and why), blocked start, pause, resume and missing target, grouped by `runId`.
+- **Outside React.** `createTourController` for deep links and notifications.
+- **Fast.** Mounting and measuring targets re-render nothing; components subscribe only to the state they use.
+
+### Breaking changes (see "Upgrading from 1.x" in the README)
+- React ≥ 18 and React Native ≥ 0.73.
+- `TourProvider` must wrap the whole app (the overlay is a layer over its children).
+- A step appears a few frames after it starts, once its target has stopped moving.
+- `useDap().targets` only holds the step being shown; `requestScroll` does nothing (scrolling is automatic).
+- The 1.x names (`DapProvider`, `DapTarget`, `DapScrollView`, `useDap`) still work and are deprecated. Seen state stored by 1.x is kept.
+
+### Since 2.0.0-beta.5
+- Added `onEvent` (analytics) on `TourProvider` and `createTourController`.
+- Fixed: `TourProvider` no longer clears a controller's `onStartBlocked` when the provider doesn't pass one.
+
+### Known limitations
+- Only a target's nearest scroll container is scrolled: a target in a horizontal row inside a vertical list is brought into view sideways, not down.
+- A target moved by a transform animation (a sliding drawer or sheet) is measured once it stops for 3 frames or after 600 ms; gate such targets with a `TourScope` that is active once the animation has finished.
+- Items of a virtualized list (`FlatList`) that aren't rendered can't be reached.
+
+## 2.0.0-beta.5 — 2026-10-19
+
+Walkthroughs through forms and popups.
+
+### Added
+- `interactive: true` on steps: the highlighted element stays usable (type in a field, open a picker) and the step moves on with Next, or with `advanceOn: { event }`. The element gets the action ring; the rest of the screen stays blocked.
+- `TourOverlayHost`: wrap a modal's content in it, and steps whose target is inside are drawn inside the modal, above its content, with the provider's card and colors. The resume chip stays at the app root. Outside a `TourProvider` it renders just its children.
+- `TourTooltipProps.isInteractive`; the built-in card says "Use the highlighted item, then tap Next."
+- `PresentedStep.hostId`: the host a step is drawn in (`null` for the app root).
+
 ## 2.0.0-beta.4 — 2026-10-19
 
 Walkthroughs: "How do I…?" guidance through real tasks.

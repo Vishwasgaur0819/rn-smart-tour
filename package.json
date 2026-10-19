@@ -1,6 +1,6 @@
 {
   "name": "rn-smart-tour",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-rc.0",
   "description": "Product tours, guided walkthroughs and onboarding overlays for React Native.",
   "author": "Vishwas Gaur",
   "license": "MIT",

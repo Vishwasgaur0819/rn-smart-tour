@@ -4,6 +4,8 @@ import type {
   TargetMeasurement as Rect,
   Tour,
   TourContext,
+  TourEvent,
+  TourExitReason,
   TourStep,
 } from '../types';
 import { createStore } from './store';
@@ -22,10 +24,17 @@ export interface ScrollableHandle {
   horizontal: boolean;
 }
 
+/** A `TourOverlayHost` (e.g. inside an app popup): steps on its targets are drawn there. */
+export interface HostHandle {
+  id: string;
+}
+
 export interface TargetHandle {
   ref: { current: any };
   scope: ScopeHandle | null;
   scrollable: ScrollableHandle | null;
+  /** The nearest `TourOverlayHost`; null/undefined: drawn by the provider's root overlay. */
+  host?: HostHandle | null;
 }
 
 /**
@@ -36,6 +45,8 @@ export interface PresentedStep {
   tourId: string;
   stepIndex: number;
   rect: Rect | null;
+  /** The `TourOverlayHost` that draws this step (its target is inside it), or null for the root overlay. */
+  hostId: string | null;
 }
 
 export interface TourEngineState {
@@ -64,7 +75,21 @@ export interface TourEngineOptions {
   context?: TourContext;
   /** A tour's `canStart` refused a start requested with `startTour` (not auto-start). */
   onStartBlocked?: (tour: Tour, reason: string) => void;
+  /** Analytics: called for everything that happens in a tour (see `TourEvent`). */
+  onEvent?: (event: TourEvent) => void;
 }
+
+/** A `TourEvent` without the fields the engine fills in. */
+type TourEventBody = TourEvent extends infer E
+  ? E extends TourEvent
+    ? Omit<E, 'runId' | 'tourId' | 'tourKind' | 'timestamp'>
+    : never
+  : never;
+
+let runCounter = 0;
+/** Unique enough to group one run's events on a backend (not a secure id). */
+const createRunId = () =>
+  `${Date.now().toString(36)}-${(++runCounter).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 /** A press on a target only counts if the finger moved less than this (not a scroll). */
 export const PRESS_SLOP = 10;
@@ -99,6 +124,12 @@ export class TourEngine {
   private autoStartDelayMs: number;
   private context: TourContext;
   private onStartBlocked?: (tour: Tour, reason: string) => void;
+  private onEvent?: (event: TourEvent) => void;
+
+  /** The running tour's run, for analytics. */
+  private run: { id: string; startedAt: number } | null = null;
+  /** The step token whose step_shown event was sent (re-presenting the same step sends none). */
+  private shownToken = -1;
 
   private targets = new Map<string, TargetHandle[]>();
   /** Not auto-started again until the next launch (or resetTour); startTour still works. */
@@ -127,6 +158,7 @@ export class TourEngine {
     this.autoStartDelayMs = options.autoStartDelayMs ?? DEFAULT_AUTO_START_DELAY_MS;
     this.context = options.context ?? {};
     this.onStartBlocked = options.onStartBlocked;
+    this.onEvent = options.onEvent;
     this.store = createStore<TourEngineState>({
       storageReady: !options.storage,
       seen: {},
@@ -160,12 +192,13 @@ export class TourEngine {
     if (options.autoStartDelayMs !== undefined) this.autoStartDelayMs = options.autoStartDelayMs;
     if (options.context !== undefined) this.context = options.context;
     if ('onStartBlocked' in options) this.onStartBlocked = options.onStartBlocked;
+    if ('onEvent' in options) this.onEvent = options.onEvent;
     if (options.tours && options.tours !== this.tours) {
       this.tours = options.tours;
       this.store.setState({ toursRevision: this.getState().toursRevision + 1 });
       const { tourId } = this.getState();
       if (tourId && !this.tours[tourId]) {
-        this.finish(false);
+        this.finish(false, 'removed');
       } else {
         this.scheduleAutoStart();
       }
@@ -324,11 +357,31 @@ export class TourEngine {
 
     const allowed = this.checkCanStart(tour);
     if (allowed !== true) {
-      if (!isAutoStart) this.onStartBlocked?.(tour, allowed);
+      // Auto-starts are retried quietly on every target change: not worth an event.
+      if (!isAutoStart) {
+        this.track(tourId, { type: 'tour_blocked', reason: allowed }, createRunId());
+        this.onStartBlocked?.(tour, allowed);
+      }
       return;
     }
 
+    const running = this.getState();
+    if (running.tourId && this.run) {
+      this.track(running.tourId, {
+        type: 'tour_exited',
+        reason: 'replaced',
+        stepIndex: running.stepIndex,
+        durationMs: Date.now() - this.run.startedAt,
+      });
+    }
+
+    this.run = { id: createRunId(), startedAt: Date.now() };
     this.store.setState({ tourId, stepIndex: firstStep, presented: null, paused: false });
+    this.track(tourId, {
+      type: 'tour_started',
+      trigger: isAutoStart ? 'auto' : 'manual',
+      stepCount: this.getShownStepIndexes(tourId).length,
+    });
     this.enterStep();
   }
 
@@ -345,8 +398,9 @@ export class TourEngine {
     }
   }
 
-  stopTour = (markAsSeen = true) => {
-    this.finish(markAsSeen);
+  /** `reason` is for analytics; the built-in UI passes 'user' / 'back_button'. */
+  stopTour = (markAsSeen = true, reason: TourExitReason = 'app') => {
+    this.finish(markAsSeen, reason);
   };
 
   nextStep = () => {
@@ -354,13 +408,13 @@ export class TourEngine {
     if (!tourId) return;
     const tour = this.tours[tourId];
     if (!tour) {
-      this.finish(false);
+      this.finish(false, 'removed');
       return;
     }
     const next = this.findShownStep(tour, stepIndex + 1, 1);
     if (next === null) {
       // Finished the last step
-      this.finish(true);
+      this.finish(true, 'completed');
     } else {
       this.store.setState({ stepIndex: next, paused: false });
       this.enterStep();
@@ -379,12 +433,17 @@ export class TourEngine {
 
   /** Puts the running tour on hold: hidden, until `resumeTour` (or a new tour). */
   pauseTour = () => {
-    const { tourId, paused } = this.getState();
+    this.pause('app');
+  };
+
+  private pause(reason: 'app' | 'target_missing') {
+    const { tourId, stepIndex, paused } = this.getState();
     if (!tourId || paused) return;
     this.stepToken++;
     this.clearStepTimers();
     this.store.setState({ paused: true, presented: null });
-  };
+    this.track(tourId, { type: 'tour_paused', reason, stepIndex });
+  }
 
   /**
    * Continues a paused tour from the latest step (up to the one it paused on) whose
@@ -403,10 +462,11 @@ export class TourEngine {
     }
     resumeAt = resumeAt ?? this.findShownStep(tour, 0, 1);
     if (resumeAt === null) {
-      this.finish(false);
+      this.finish(false, 'app');
       return;
     }
     this.store.setState({ stepIndex: resumeAt, paused: false, presented: null });
+    this.track(tourId!, { type: 'tour_resumed', stepIndex: resumeAt });
     this.enterStep();
   };
 
@@ -481,7 +541,7 @@ export class TourEngine {
     this.clearStepTimers();
     const step = this.currentStep();
     if (!step) {
-      this.finish(false);
+      this.finish(false, 'removed');
       return;
     }
 
@@ -519,12 +579,15 @@ export class TourEngine {
             `was not found within ${timeoutMs}ms. ${outcome}`,
         );
       }
+      if (tourId) {
+        this.track(tourId, { type: 'target_missing', stepIndex, targetId: step.targetId!, outcome: policy });
+      }
       if (policy === 'skip') {
         this.nextStep();
       } else if (policy === 'pause') {
-        this.pauseTour();
+        this.pause('target_missing');
       } else {
-        this.finish(false);
+        this.finish(false, 'target_missing');
       }
     }, timeoutMs);
   }
@@ -543,7 +606,8 @@ export class TourEngine {
 
     if (!step.targetId) {
       // A centred card: nothing to find or measure.
-      this.store.setState({ presented: { tourId, stepIndex, rect: null } });
+      this.store.setState({ presented: { tourId, stepIndex, rect: null, hostId: null } });
+      this.trackStepShown(token);
       return;
     }
 
@@ -579,22 +643,36 @@ export class TourEngine {
     }
 
     cancelTimer(this.missingTimer);
+    const hostId = handle.host?.id ?? null;
     const { presented } = this.getState();
     if (
       presented &&
       presented.tourId === tourId &&
       presented.stepIndex === stepIndex &&
+      presented.hostId === hostId &&
       presented.rect &&
       isSameRect(presented.rect, rect)
     ) {
       return;
     }
-    this.store.setState({ presented: { tourId, stepIndex, rect } });
+    this.store.setState({ presented: { tourId, stepIndex, rect, hostId } });
+    this.trackStepShown(token);
   }
 
-  private finish(markAsSeen: boolean) {
-    const { tourId, seen } = this.getState();
+  private finish(markAsSeen: boolean, outcome: 'completed' | TourExitReason) {
+    const { tourId, stepIndex, seen } = this.getState();
     if (!tourId) return;
+
+    if (this.run) {
+      const durationMs = Date.now() - this.run.startedAt;
+      this.track(
+        tourId,
+        outcome === 'completed'
+          ? { type: 'tour_completed', durationMs }
+          : { type: 'tour_exited', reason: outcome, stepIndex, durationMs },
+      );
+    }
+    this.run = null;
 
     this.stepToken++;
     this.clearStepTimers();
@@ -604,6 +682,41 @@ export class TourEngine {
       this.persistSeen({ ...seen, [tourId]: true });
     }
     this.scheduleAutoStart();
+  }
+
+  // ---------------------------------------------------------------- analytics
+
+  private track(tourId: string, body: TourEventBody, runId = this.run?.id) {
+    const onEvent = this.onEvent;
+    if (!onEvent) return;
+    try {
+      onEvent({
+        ...body,
+        runId: runId ?? createRunId(),
+        tourId,
+        tourKind: this.tours[tourId]?.kind ?? 'tour',
+        timestamp: Date.now(),
+      } as TourEvent);
+    } catch (e) {
+      console.error('[rn-smart-tour] onEvent failed', e);
+    }
+  }
+
+  /** Once per entered step: re-presenting it (re-measure, target back on screen) sends nothing. */
+  private trackStepShown(token: number) {
+    if (token === this.shownToken) return;
+    this.shownToken = token;
+    const { tourId, stepIndex } = this.getState();
+    const tour = tourId ? this.tours[tourId] : undefined;
+    if (!tourId || !tour) return;
+    const shown = this.getShownStepIndexes(tourId);
+    this.track(tourId, {
+      type: 'step_shown',
+      stepIndex,
+      stepNumber: shown.indexOf(stepIndex) + 1,
+      stepCount: shown.length,
+      targetId: tour.steps[stepIndex]?.targetId,
+    });
   }
 
   // ---------------------------------------------------------------- auto-start
