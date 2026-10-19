@@ -12,7 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { TourOverlayHost, TourProvider, TourScrollable, TourTarget, useTour } from 'rn-smart-tour';
-import type { StorageAdapter, Tour } from 'rn-smart-tour';
+import type { StorageAdapter, Tour, TourEvent } from 'rn-smart-tour';
 import { NavigationTourScope } from 'rn-smart-tour/react-navigation';
 
 type RootStack = { Home: undefined; Details: undefined };
@@ -247,11 +247,21 @@ const DetailsScreen = () => {
   );
 };
 
+/** Analytics: an app would send these to its backend (see "Analytics" in the README). */
+const logTourEvent = (event: TourEvent) => {
+  const { type, tourId, runId, timestamp: _timestamp, tourKind: _kind, ...details } = event;
+  console.log(`[tour event] ${type} ${tourId} run=${runId} ${JSON.stringify(details)}`);
+};
+
 export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" />
-      <TourProvider tours={TOURS} storageAdapter={storage} missingTargetTimeoutMs={2000}>
+      <TourProvider
+        tours={TOURS}
+        storageAdapter={storage}
+        missingTargetTimeoutMs={2000}
+        onEvent={logTourEvent}>
         <NavigationContainer ref={navigationRef}>
           <Stack.Navigator>
             <Stack.Screen name="Home" component={HomeScreen} />

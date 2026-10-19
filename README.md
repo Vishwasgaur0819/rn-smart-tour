@@ -15,7 +15,11 @@
 - 📜 **Auto-Scroll**: Works with `ScrollView`, `FlatList` and `SectionList`; each target scrolls its own nearest list.
 - ⚡ **No Re-Render Cost**: Mounting and measuring targets re-renders nothing; components subscribe only to the tour state they use.
 - 💾 **Seen State Caching**: Persistent "only-once" logic with pluggable storage (AsyncStorage, MMKV, etc.).
-- 🛟 **Never Gets Stuck**: If a step's target isn't on screen in time, the tour ends (or skips the step) instead of leaving an invisible, active tour.
+- 🛟 **Never Gets Stuck**: If a step's target isn't on screen in time, the tour ends, skips the step, or (walkthroughs) pauses with a Resume chip — never an invisible, active tour.
+- 🙋 **"How do I…?" Walkthroughs**: Guide users through real tasks — they tap the real buttons and fill in the real form — with a searchable help list.
+- 🪟 **Works With Your Popups**: The tour is drawn over the app, your modals open above it, and steps can point inside them.
+- 🎨 **Your Design**: Render the card and resume chip with your own components and theme.
+- 📊 **Analytics**: One callback reports starts, steps, completions, exits (and why) for funnels in your own backend.
 - 🔁 **Replay on Demand**: `startTour(id, { force: true })`, `resetTour(id)` and `resetAll()`, from components or from outside React.
 
 ---
@@ -23,8 +27,8 @@
 ## 📦 Installation
 
 ```sh
-npm install rn-smart-tour@next   # 2.0 beta (this README)
-npm install rn-smart-tour        # 1.x (stable)
+npm install rn-smart-tour@next   # 2.0 release candidate (this README)
+npm install rn-smart-tour        # 1.x (stable, until 2.0.0)
 ```
 
 Requires React 18+ and React Native 0.73+. No native code, so no `pod install` or rebuild is needed. React Navigation (6+) is optional.
@@ -328,7 +332,7 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 <summary><b>Tour Lifecycle Rules</b></summary>
 
 - **Skip**, **Finish** and the **Android back button** end the tour and mark it as seen.
-- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**, or the step's `targetTimeoutMs`), the tour ends **without** being marked as seen, or moves to the next step with `onMissingTarget: 'skip'`. A warning is logged in development.
+- If a step's target is not on screen within `missingTargetTimeoutMs` (default **3000ms**, or the step's `targetTimeoutMs`), the tour ends **without** being marked as seen, moves to the next step with `onMissingTarget: 'skip'`, or pauses with a Resume chip with `onMissingTarget: 'pause'` (the default for walkthroughs). A warning is logged in development.
 - If the target of the step being shown disappears (unmounts, or its screen loses focus), the step is hidden until it comes back, within the same timeout.
 - While moving to the next step, the current one stays on screen until the next target is measured, and extra taps on **Next** are ignored.
 
@@ -432,6 +436,15 @@ Behaviour changes:
 - A step appears a few frames after it starts (once its target has stopped moving), not immediately.
 - `useDap().targets` only contains the measurement of the step being shown, and `requestScroll` does nothing; scrolling is automatic.
 - Wrap screens in `NavigationTourScope` (or `TourScope`) to stop targets on background screens from being used.
+- `TourProvider` must wrap the whole app: the overlay is now drawn as a layer over its children instead of in a `Modal`, so the app's own modals open above it. To point a step inside one of your modals, wrap the modal's content in `TourOverlayHost`.
+
+---
+
+## ⚠️ Known Limitations
+
+- **Nested lists**: only a target's nearest scroll container is scrolled. A target in a horizontal row inside a vertical list is brought into view sideways, but the outer list doesn't scroll to the row.
+- **Sliding elements**: a target moved by a transform animation (a drawer or sheet sliding in) is measured once it holds still for 3 frames, or after 600 ms. Put such targets in a `TourScope` that becomes active once the animation has finished (e.g. a drawer's progress reaching 1).
+- **Virtualized lists**: `FlatList` items that aren't rendered yet can't be highlighted.
 
 ---
 
