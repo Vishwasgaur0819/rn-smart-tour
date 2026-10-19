@@ -75,7 +75,7 @@ export function useDap(): DapContextType {
     return {
       ...api,
       ...getLegacyRegistry(engine),
-      targets: presented && presentedStep ? { [presentedStep.targetId]: presented.rect } : {},
+      targets: presented?.rect && presentedStep?.targetId ? { [presentedStep.targetId]: presented.rect } : {},
       requestScroll: noop,
       _registerScrollRef: noop,
       _unregisterScrollRef: noop,

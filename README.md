@@ -197,7 +197,51 @@ const TourCard = ({ step, stepIndex, stepCount, isFirstStep, isLastStep, next, p
   backdropColor="rgba(0, 0, 0, 0.6)">
 ```
 
-### 9. Start Tours from Outside React (Optional)
+### 9. "How do I…?" Walkthroughs (Optional)
+A walkthrough guides the user through a task in the real app — they tap the real buttons and the walkthrough follows along. Start it from a help list instead of automatically.
+
+```tsx
+const TOURS = {
+  applyLeave: {
+    id: 'applyLeave',
+    kind: 'walkthrough',
+    title: 'Apply for leave',
+    keywords: ['holiday', 'sick'],
+    canStart: ctx => (ctx.isOnline ? true : 'Connect to the internet to apply for leave'),
+    steps: [
+      { title: "Let's apply for leave", description: 'It takes about a minute.' }, // no targetId: centred card
+      { targetId: 'menu', title: 'Open the menu', description: '', advanceOn: 'press' },
+      { targetId: 'leave', title: 'Tap Leave Management', description: '', advanceOn: 'press' },
+      { targetId: 'apply', title: 'Tap Apply Leave', description: '', advanceOn: 'press' },
+      { targetId: 'leaveType', title: 'Pick the leave type', description: '' }, // Next button
+      { targetId: 'submit', title: 'Tap Submit Request', description: 'This sends a real request.', advanceOn: 'press' },
+      { title: 'All done!', description: 'Track it under My Leave requests.' },
+    ],
+  },
+};
+
+<TourProvider
+  tours={TOURS}
+  context={{ isOnline }}                                   // what canStart / when check
+  onStartBlocked={(tour, reason) => Toast.show(reason)}    // canStart said no
+>
+```
+
+- `advanceOn: 'press'` — the highlighted element stays tappable; the step moves on when the user taps it. The rest of the screen stays blocked.
+- `advanceOn: { event: 'leaveTypeChosen' }` — moves on when the app calls `emit('leaveTypeChosen')` (from `useTour()` or a controller).
+- `when: ctx => …` — shows a step only when it applies (e.g. managers only); step counts skip hidden steps.
+- If the user leaves the path, a walkthrough **pauses** (instead of ending) and shows a "Resume" chip (`renderResumeChip` to draw your own). Resuming continues from the latest step whose element is on screen, so the user is guided back.
+
+List walkthroughs for a help screen with `useTourCatalog`:
+
+```tsx
+const tasks = useTourCatalog({ kind: 'walkthrough', query: searchText });
+// [{ id: 'applyLeave', title: 'Apply for leave', kind: 'walkthrough' }, …]
+const { startTour } = useTour();
+<Button title={task.title} onPress={() => startTour(task.id, { force: true })} />
+```
+
+### 10. Start Tours from Outside React (Optional)
 For deep links or notification handlers, create a controller and pass it to the provider:
 
 ```tsx
@@ -264,23 +308,32 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `backdropColor` | `string` | `'rgba(0, 0, 0, 0.6)'` | Color of the dimmed area around the target. |
 | `presentation` | `'root' \| 'modal'` | `'root'` | `'root'` draws the overlay as a layer over the app; the app's own modals open above it. `'modal'` uses a React Native `Modal` (only for tours inside another Modal). |
 | `supportedOrientations` | `ModalProps['supportedOrientations']` | all | With `presentation="modal"`: iOS orientations the overlay allows (still limited by Info.plist). |
+| `context` | `Record<string, unknown>` | `{}` | App state that `canStart` and step `when` receive. |
+| `onStartBlocked` | `(tour, reason) => void` | — | A tour's `canStart` refused a `startTour` call; show `reason` to the user. |
+| `renderResumeChip` | `(props: ResumeChipProps) => ReactNode` | built-in chip | Draws the "Resume" chip shown while a tour is paused (`tour`, `resume`, `dismiss`). |
+| `highlightColor` | `string` | `'#FFFFFF'` | Ring around an element the user should tap. |
 
 ### Tour Configuration
 | Property | Type | Description |
 |:---|:---|:---|
 | `id` | `string` | Unique identifier for caching. |
-| `autoStart` | `boolean` | Start the first time the first step's target appears. |
+| `autoStart` | `boolean` | Start the first time the first step with a target appears. |
 | `steps` | `TourStep[]` | Sequence of highlight steps. |
+| `kind` | `'tour' \| 'walkthrough'` | Walkthroughs pause on a missing target and say "Exit". Default `'tour'`. |
+| `title` / `description` / `keywords` | `string` / `string` / `string[]` | Shown and searched by `useTourCatalog`. |
+| `canStart` | `(context) => boolean \| string` | Return `true`, or a reason the tour can't start. |
 
 ### TourStep
 | Property | Type | Default | Description |
 |:---|:---|:---|:---|
-| `targetId` | `string` | — | Matches the `name` prop of a `<TourTarget>`. |
+| `targetId` | `string` | — | Matches the `name` prop of a `<TourTarget>`. Leave out for a centred card. |
 | `title` | `string` | — | Tooltip header. |
 | `description` | `string` | — | Tooltip body. |
 | `position` | `string` | `'bottom'` | `top`, `bottom`, `left`, `right`. |
 | `beforeEnter` | `() => void \| Promise<void>` | — | Runs (and is awaited) before the step looks for its target. |
-| `onMissingTarget` | `'end' \| 'skip'` | `'end'` | What happens if the target isn't found in time. |
+| `advanceOn` | `'next' \| 'press' \| { event }` | `'next'` | How the step moves on: Next button, a tap on the element, or an app event. |
+| `when` | `(context) => boolean` | — | Show the step only when this returns true. |
+| `onMissingTarget` | `'end' \| 'skip' \| 'pause'` | `'end'` (`'pause'` for walkthroughs) | What happens if the target isn't found in time. |
 | `targetTimeoutMs` | `number` | provider's | Per-step override of `missingTargetTimeoutMs`. |
 
 ### TourTarget
@@ -310,10 +363,12 @@ A tour that is stopped (finished, skipped, or ended because a target was missing
 | `nextStep()` / `prevStep()` | Manual step navigation. |
 | `resetTour(id)` | Mark a tour as unseen so it can show (and auto-start) again. |
 | `resetAll()` | Mark every tour as unseen. |
-| `status` | `'idle'`, `'waiting'` (looking for the step's target) or `'active'`. |
+| `status` | `'idle'`, `'waiting'` (looking for the step's target), `'active'` or `'paused'`. |
 | `activeTour` | Current active tour object. |
 | `currentStepIndex` | Current step number (0-indexed). |
 | `seenTours` | `Record<string, boolean>` of tours already seen. |
+| `emit(event)` | Report an app event, for steps with `advanceOn: { event }`. |
+| `pauseTour()` / `resumeTour()` | Put the running tour on hold / continue it. |
 
 `useTourState(selector)` subscribes to any slice of the tour state and re-renders only when it changes.
 

@@ -5,11 +5,29 @@ export interface TargetMeasurement {
   height: number;
 }
 
+/** App state that tours can check (`canStart`, step `when`), e.g. `{ isOnline, hasDraftMtp }`. */
+export type TourContext = Record<string, unknown>;
+
+/**
+ * How a step moves on:
+ * - `'next'` (default): the user taps Next on the card.
+ * - `'press'`: the user taps the highlighted element itself (it stays tappable);
+ *   the step moves on when they do. Use for "Tap Apply Leave" style steps.
+ * - `{ event }`: the app reports that something happened with `emit(event)`,
+ *   e.g. a leave type was chosen.
+ */
+export type StepAdvance = 'next' | 'press' | { event: string };
+
 export interface TourStep {
-  targetId: string;
+  /** Matches a `TourTarget` name. Leave out for a card in the middle of the screen (intro, finish). */
+  targetId?: string;
   title: string;
   description: string;
   position?: 'top' | 'bottom' | 'left' | 'right';
+  /** Default: 'next'. */
+  advanceOn?: StepAdvance;
+  /** Show the step only when this returns true (checked as the step is reached). */
+  when?: (context: TourContext) => boolean;
   /**
    * Runs before the step looks for its target, e.g. to navigate to the screen
    * that contains it. The step waits for a returned promise.
@@ -17,9 +35,11 @@ export interface TourStep {
   beforeEnter?: () => void | Promise<void>;
   /**
    * What to do if the target is not on screen within the timeout:
-   * 'end' (default) ends the tour without marking it seen; 'skip' moves on to the next step.
+   * - 'end' (default for tours) ends the tour without marking it seen;
+   * - 'skip' moves on to the next step;
+   * - 'pause' (default for walkthroughs) hides the tour and offers to resume it.
    */
-  onMissingTarget?: 'end' | 'skip';
+  onMissingTarget?: 'end' | 'skip' | 'pause';
   /** Overrides the provider's `missingTargetTimeoutMs` for this step. */
   targetTimeoutMs?: number;
 }
@@ -27,7 +47,25 @@ export interface TourStep {
 export interface Tour {
   id: string;
   steps: TourStep[];
-  autoStart?: boolean; // If true, starts automatically when first target is visible
+  /** Start automatically, once, the first time the first step with a target is on screen. */
+  autoStart?: boolean;
+  /**
+   * - `'tour'` (default): introduces a screen or feature.
+   * - `'walkthrough'`: guides the user through a task ("Apply for leave"), usually
+   *   started from a help list. Missing targets pause it instead of ending it, and
+   *   the built-in card says "Exit" instead of "Skip".
+   */
+  kind?: 'tour' | 'walkthrough';
+  /** For help lists (`useTourCatalog`), e.g. "Apply for leave". */
+  title?: string;
+  description?: string;
+  /** Extra words that should find this tour in a help search, e.g. ['holiday', 'sick']. */
+  keywords?: string[];
+  /**
+   * Checked before starting. Return true to start, or a message explaining why not
+   * (e.g. 'Connect to the internet first'); the provider's `onStartBlocked` receives it.
+   */
+  canStart?: (context: TourContext) => boolean | string;
 }
 
 export interface StorageAdapter {
@@ -44,11 +82,18 @@ export interface StartTourOptions {
 export interface TourTooltipProps {
   tour: Tour;
   step: TourStep;
-  /** 0-based index of `step` in `tour.steps`. */
+  /** 0-based position of `step` among the steps shown (steps whose `when` is false don't count). */
   stepIndex: number;
   stepCount: number;
   isFirstStep: boolean;
   isLastStep: boolean;
+  /**
+   * The step moves on by itself (the user taps the highlighted element, or the app
+   * reports an event): don't show a Next button, tell the user what to do instead.
+   */
+  isActionStep: boolean;
+  /** The step has no target and is drawn in the middle of the screen. */
+  isCentered: boolean;
   /** Next step, or finish (and mark seen) on the last one. */
   next: () => void;
   /** Previous step. */
@@ -61,8 +106,17 @@ export interface TourTooltipProps {
  * - `idle`: no tour running.
  * - `waiting`: a step is active but its target is not measured yet (or not on screen).
  * - `active`: the current step is shown.
+ * - `paused`: the tour is on hold (its target went away); `resumeTour` continues it.
  */
-export type TourStatus = 'idle' | 'waiting' | 'active';
+export type TourStatus = 'idle' | 'waiting' | 'active' | 'paused';
+
+/** A tour as listed by `useTourCatalog`. */
+export interface TourCatalogEntry {
+  id: string;
+  title: string;
+  description?: string;
+  kind: 'tour' | 'walkthrough';
+}
 
 export interface TourApi {
   startTour: (tourId: string, options?: StartTourOptions) => void;
@@ -73,6 +127,12 @@ export interface TourApi {
   resetTour: (tourId: string) => void;
   /** Mark every tour as unseen. */
   resetAll: () => void;
+  /** Report that something happened, for steps with `advanceOn: { event }`. */
+  emit: (event: string) => void;
+  /** Put the running tour on hold (e.g. while the app shows something unrelated). */
+  pauseTour: () => void;
+  /** Continue a paused tour from the latest step whose target is on screen. */
+  resumeTour: () => void;
   status: TourStatus;
   activeTour: Tour | null;
   currentStepIndex: number;

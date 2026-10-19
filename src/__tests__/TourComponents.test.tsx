@@ -191,7 +191,7 @@ describe('useTour', () => {
     y = 300; // the target moves; its layout event triggers a re-measure
     fireEvent(screen.getByTestId('target'), 'layout', { nativeEvent: { layout: {} } });
     await advance(200);
-    expect(state.presented?.rect.y).toBe(300);
+    expect(state.presented?.rect?.y).toBe(300);
     expect(renders).toBe(afterStart);
   });
 });
@@ -420,7 +420,7 @@ describe('scrolling', () => {
     await advance(700);
     expect(measureLayout).toHaveBeenCalledWith(innerView, expect.any(Function), expect.any(Function));
     expect(scrollTo).toHaveBeenCalledWith({ y: 875, animated: true });
-    expect(state.presented?.rect.y).toBe(300);
+    expect(state.presented?.rect?.y).toBe(300);
   });
 });
 

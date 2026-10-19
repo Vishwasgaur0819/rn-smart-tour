@@ -85,7 +85,7 @@ describe('measuring', () => {
     engine.registerTarget('a', handle(view));
     engine.startTour('t');
     await advance(400);
-    expect(engine.getState().presented?.rect.y).toBe(100);
+    expect(engine.getState().presented?.rect?.y).toBe(100);
   });
 
   it('retries a target that has no size yet, and presents it once it does', async () => {
@@ -118,7 +118,7 @@ describe('measuring', () => {
     rect = { ...RECT, y: 500 };
     engine.requestRemeasure();
     await advance(200);
-    expect(engine.getState().presented?.rect.y).toBe(500);
+    expect(engine.getState().presented?.rect?.y).toBe(500);
   });
 
   it('keeps the previous step drawn while the next one is measured (no flicker)', async () => {
@@ -252,7 +252,7 @@ describe('scopes', () => {
     );
     engine.startTour('t');
     await advance(200);
-    expect(engine.getState().presented?.rect.y).toBe(999);
+    expect(engine.getState().presented?.rect?.y).toBe(999);
   });
 
   it('warns once, in development, when several ready targets share a name', async () => {
@@ -290,7 +290,7 @@ describe('beforeEnter', () => {
     engine.registerTarget('a', handle(fakeView(() => ({ ...RECT, y: 2 }))));
     resolveNavigation();
     await advance(200);
-    expect(engine.getState().presented?.rect.y).toBe(2);
+    expect(engine.getState().presented?.rect?.y).toBe(2);
   });
 
   it('still looks for the target if beforeEnter throws', async () => {
@@ -352,7 +352,7 @@ describe('auto-scroll', () => {
     await advance(600);
     // Centered: 1200 - (500 - 50) / 2
     expect(scrollView.scrollTo).toHaveBeenCalledWith({ y: 975, animated: true });
-    expect(engine.getState().presented?.rect.y).toBe(100 + 1200 - 975);
+    expect(engine.getState().presented?.rect?.y).toBe(100 + 1200 - 975);
   });
 
   it('does not scroll a target that is already visible', async () => {
@@ -362,7 +362,7 @@ describe('auto-scroll', () => {
     engine.startTour('t');
     await advance(600);
     expect(scrollView.scrollTo).not.toHaveBeenCalled();
-    expect(engine.getState().presented?.rect.y).toBe(300);
+    expect(engine.getState().presented?.rect?.y).toBe(300);
   });
 
   it('works with a FlatList-style ref that exposes its ScrollView via getNativeScrollRef', async () => {

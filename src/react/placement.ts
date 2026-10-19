@@ -17,7 +17,8 @@ export interface TooltipPlacement {
 
 /**
  * Where to put the tooltip card. Uses the card's measured height, prefers the
- * step's `position`, and flips to the other side when it doesn't fit.
+ * step's `position`, and flips to the other side when it doesn't fit. Without a
+ * target rect (a centred step) the card goes in the middle of the screen.
  */
 export function placeTooltip({
   rect,
@@ -27,7 +28,7 @@ export function placeTooltip({
   position = 'bottom',
   width,
 }: {
-  rect: Rect;
+  rect: Rect | null;
   cardHeight: number;
   screenWidth: number;
   screenHeight: number;
@@ -35,6 +36,14 @@ export function placeTooltip({
   width: number;
 }): TooltipPlacement {
   const cardWidth = Math.min(width, screenWidth - EDGE_PADDING * 2);
+
+  if (!rect) {
+    return {
+      left: (screenWidth - cardWidth) / 2,
+      top: clamp((screenHeight - cardHeight) / 2, EDGE_PADDING, screenHeight - EDGE_PADDING - cardHeight),
+      width: cardWidth,
+    };
+  }
   const centeredTop = clamp(
     rect.y + rect.height / 2 - cardHeight / 2,
     EDGE_PADDING,

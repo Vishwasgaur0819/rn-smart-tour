@@ -1,4 +1,11 @@
-import type { StartTourOptions, StorageAdapter, TargetMeasurement as Rect, Tour, TourStep } from '../types';
+import type {
+  StartTourOptions,
+  StorageAdapter,
+  TargetMeasurement as Rect,
+  Tour,
+  TourContext,
+  TourStep,
+} from '../types';
 import { createStore } from './store';
 import type { Store } from './store';
 import { delay, isSameRect, measureStable, scrollIntoView } from './measure';
@@ -21,11 +28,14 @@ export interface TargetHandle {
   scrollable: ScrollableHandle | null;
 }
 
-/** The step currently drawn by the overlay, with its target's window-relative rect. */
+/**
+ * The step currently drawn by the overlay, with its target's window-relative rect
+ * (null for a step without a target, drawn in the middle of the screen).
+ */
 export interface PresentedStep {
   tourId: string;
   stepIndex: number;
-  rect: Rect;
+  rect: Rect | null;
 }
 
 export interface TourEngineState {
@@ -39,6 +49,10 @@ export interface TourEngineState {
    * step until the new target is measured, so the overlay does not flicker.
    */
   presented: PresentedStep | null;
+  /** The running tour is on hold (its target went away); `resumeTour` continues it. */
+  paused: boolean;
+  /** Changes when the set of tours changes (for help lists). */
+  toursRevision: number;
 }
 
 export interface TourEngineOptions {
@@ -46,7 +60,14 @@ export interface TourEngineOptions {
   storage?: StorageAdapter;
   missingTargetTimeoutMs?: number;
   autoStartDelayMs?: number;
+  /** App state for `canStart` and step `when`. */
+  context?: TourContext;
+  /** A tour's `canStart` refused a start requested with `startTour` (not auto-start). */
+  onStartBlocked?: (tour: Tour, reason: string) => void;
 }
+
+/** A press on a target only counts if the finger moved less than this (not a scroll). */
+export const PRESS_SLOP = 10;
 
 export const STORAGE_KEY = '@rn-dap:seen_tours';
 const DEFAULT_MISSING_TARGET_TIMEOUT_MS = 3000;
@@ -76,6 +97,8 @@ export class TourEngine {
   private storage?: StorageAdapter;
   private missingTargetTimeoutMs: number;
   private autoStartDelayMs: number;
+  private context: TourContext;
+  private onStartBlocked?: (tour: Tour, reason: string) => void;
 
   private targets = new Map<string, TargetHandle[]>();
   /** Not auto-started again until the next launch (or resetTour); startTour still works. */
@@ -102,12 +125,16 @@ export class TourEngine {
     this.storage = options.storage;
     this.missingTargetTimeoutMs = options.missingTargetTimeoutMs ?? DEFAULT_MISSING_TARGET_TIMEOUT_MS;
     this.autoStartDelayMs = options.autoStartDelayMs ?? DEFAULT_AUTO_START_DELAY_MS;
+    this.context = options.context ?? {};
+    this.onStartBlocked = options.onStartBlocked;
     this.store = createStore<TourEngineState>({
       storageReady: !options.storage,
       seen: {},
       tourId: null,
       stepIndex: 0,
       presented: null,
+      paused: false,
+      toursRevision: 0,
     });
   }
 
@@ -117,12 +144,25 @@ export class TourEngine {
 
   getTour = (tourId: string): Tour | null => this.tours[tourId] ?? null;
 
+  getTours = (): Tour[] => Object.values(this.tours);
+
+  getContext = (): TourContext => this.context;
+
+  /** Indexes of the tour's steps that are shown (their `when` passes right now). */
+  getShownStepIndexes = (tourId: string): number[] => {
+    const tour = this.tours[tourId];
+    return tour ? tour.steps.map((_, i) => i).filter(i => this.isShown(tour, i)) : [];
+  };
+
   setOptions(options: Partial<Omit<TourEngineOptions, 'storage'>>) {
     if (options.missingTargetTimeoutMs !== undefined)
       this.missingTargetTimeoutMs = options.missingTargetTimeoutMs;
     if (options.autoStartDelayMs !== undefined) this.autoStartDelayMs = options.autoStartDelayMs;
+    if (options.context !== undefined) this.context = options.context;
+    if ('onStartBlocked' in options) this.onStartBlocked = options.onStartBlocked;
     if (options.tours && options.tours !== this.tours) {
       this.tours = options.tours;
+      this.store.setState({ toursRevision: this.getState().toursRevision + 1 });
       const { tourId } = this.getState();
       if (tourId && !this.tours[tourId]) {
         this.finish(false);
@@ -207,6 +247,22 @@ export class TourEngine {
     if (this.currentStep()?.targetId === name) this.requestRemeasure();
   }
 
+  /** The user tapped a target. Moves on if the shown step waits for that tap. */
+  notifyTargetPress(name: string) {
+    const step = this.currentStep();
+    if (step?.advanceOn === 'press' && step.targetId === name && this.isCurrentStepPresented()) {
+      this.nextStep();
+    }
+  }
+
+  /** The app reports something happened; moves on if the current step waits for it. */
+  emit = (event: string) => {
+    const advanceOn = this.currentStep()?.advanceOn;
+    if (!this.getState().paused && typeof advanceOn === 'object' && advanceOn.event === event) {
+      this.nextStep();
+    }
+  };
+
   /** Something may have moved the shown target (rotation, keyboard, app foregrounded). */
   requestRemeasure() {
     if (!this.isCurrentStepPresented()) return;
@@ -231,7 +287,7 @@ export class TourEngine {
     this.scheduleAutoStart();
 
     const step = this.currentStep();
-    if (!step || (name !== null && name !== step.targetId)) return;
+    if (!step?.targetId || this.getState().paused || (name !== null && name !== step.targetId)) return;
 
     if (this.resolveTarget(step.targetId)) {
       if (this.isCurrentStepPresented()) {
@@ -249,22 +305,45 @@ export class TourEngine {
   // ---------------------------------------------------------------- tour actions
 
   startTour = (tourId: string, options?: StartTourOptions) => {
-    this.whenStorageReady(() => {
-      const tour = this.tours[tourId];
-      if (!tour) {
-        console.warn(`[rn-smart-tour] Tour with id ${tourId} not found.`);
-        return;
-      }
-      if (tour.steps.length === 0) {
-        console.warn(`[rn-smart-tour] Tour with id ${tourId} has no steps.`);
-        return;
-      }
-      if (this.getState().seen[tourId] && !options?.force) return;
-
-      this.store.setState({ tourId, stepIndex: 0, presented: null });
-      this.enterStep();
-    });
+    this.whenStorageReady(() => this.start(tourId, options, false));
   };
+
+  private start(tourId: string, options: StartTourOptions | undefined, isAutoStart: boolean) {
+    const tour = this.tours[tourId];
+    if (!tour) {
+      console.warn(`[rn-smart-tour] Tour with id ${tourId} not found.`);
+      return;
+    }
+    if (this.getState().seen[tourId] && !options?.force) return;
+
+    const firstStep = this.findShownStep(tour, 0, 1);
+    if (firstStep === null) {
+      console.warn(`[rn-smart-tour] Tour with id ${tourId} has no steps to show.`);
+      return;
+    }
+
+    const allowed = this.checkCanStart(tour);
+    if (allowed !== true) {
+      if (!isAutoStart) this.onStartBlocked?.(tour, allowed);
+      return;
+    }
+
+    this.store.setState({ tourId, stepIndex: firstStep, presented: null, paused: false });
+    this.enterStep();
+  }
+
+  /** true, or why the tour can't start. */
+  private checkCanStart(tour: Tour): true | string {
+    if (!tour.canStart) return true;
+    try {
+      const result = tour.canStart(this.context);
+      if (result === true) return true;
+      return typeof result === 'string' && result ? result : 'This tour cannot start right now.';
+    } catch (e) {
+      console.error('[rn-smart-tour] canStart failed', e);
+      return 'This tour cannot start right now.';
+    }
+  }
 
   stopTour = (markAsSeen = true) => {
     this.finish(markAsSeen);
@@ -276,21 +355,80 @@ export class TourEngine {
     const tour = this.tours[tourId];
     if (!tour) {
       this.finish(false);
-    } else if (stepIndex < tour.steps.length - 1) {
-      this.store.setState({ stepIndex: stepIndex + 1 });
-      this.enterStep();
-    } else {
+      return;
+    }
+    const next = this.findShownStep(tour, stepIndex + 1, 1);
+    if (next === null) {
       // Finished the last step
       this.finish(true);
+    } else {
+      this.store.setState({ stepIndex: next, paused: false });
+      this.enterStep();
     }
   };
 
   prevStep = () => {
     const { tourId, stepIndex } = this.getState();
-    if (!tourId || stepIndex === 0) return;
-    this.store.setState({ stepIndex: stepIndex - 1 });
+    const tour = tourId ? this.tours[tourId] : undefined;
+    if (!tour) return;
+    const previous = this.findShownStep(tour, stepIndex - 1, -1);
+    if (previous === null) return;
+    this.store.setState({ stepIndex: previous, paused: false });
     this.enterStep();
   };
+
+  /** Puts the running tour on hold: hidden, until `resumeTour` (or a new tour). */
+  pauseTour = () => {
+    const { tourId, paused } = this.getState();
+    if (!tourId || paused) return;
+    this.stepToken++;
+    this.clearStepTimers();
+    this.store.setState({ paused: true, presented: null });
+  };
+
+  /**
+   * Continues a paused tour from the latest step (up to the one it paused on) whose
+   * target is on screen now, so the user is guided back from wherever they went;
+   * from the first step if none is.
+   */
+  resumeTour = () => {
+    const { tourId, stepIndex, paused } = this.getState();
+    const tour = tourId ? this.tours[tourId] : undefined;
+    if (!tour || !paused) return;
+
+    let resumeAt: number | null = null;
+    for (let i = stepIndex; i >= 0 && resumeAt === null; i--) {
+      const targetId = tour.steps[i].targetId;
+      if (targetId && this.isShown(tour, i) && this.resolveTarget(targetId)) resumeAt = i;
+    }
+    resumeAt = resumeAt ?? this.findShownStep(tour, 0, 1);
+    if (resumeAt === null) {
+      this.finish(false);
+      return;
+    }
+    this.store.setState({ stepIndex: resumeAt, paused: false, presented: null });
+    this.enterStep();
+  };
+
+  /** Whether the step's `when` lets it show (a throwing `when` counts as shown). */
+  private isShown(tour: Tour, index: number) {
+    const when = tour.steps[index]?.when;
+    if (!when) return true;
+    try {
+      return !!when(this.context);
+    } catch (e) {
+      console.error('[rn-smart-tour] step when() failed', e);
+      return true;
+    }
+  }
+
+  /** The first shown step from `from`, moving by `direction`; null if there is none. */
+  private findShownStep(tour: Tour, from: number, direction: 1 | -1): number | null {
+    for (let i = from; i >= 0 && i < tour.steps.length; i += direction) {
+      if (this.isShown(tour, i)) return i;
+    }
+    return null;
+  }
 
   resetTour = (tourId: string) => {
     this.whenStorageReady(() => {
@@ -365,19 +503,26 @@ export class TourEngine {
 
   private armMissingTimer(token: number, step: TourStep) {
     cancelTimer(this.missingTimer);
+    if (!step.targetId) return; // centred steps have nothing to wait for
     const timeoutMs = step.targetTimeoutMs ?? this.missingTargetTimeoutMs;
     this.missingTimer = setTimeout(() => {
       if (token !== this.stepToken) return;
-      const skip = step.onMissingTarget === 'skip';
+      const { tourId, stepIndex } = this.getState();
+      const isWalkthrough = tourId ? this.tours[tourId]?.kind === 'walkthrough' : false;
+      const policy = step.onMissingTarget ?? (isWalkthrough ? 'pause' : 'end');
       if (__DEV__) {
-        const { tourId, stepIndex } = this.getState();
+        const outcome = { skip: 'Skipping the step.', pause: 'Pausing the tour.', end: 'Ending the tour.' }[
+          policy
+        ];
         console.warn(
           `[rn-smart-tour] Target "${step.targetId}" for step ${stepIndex + 1} of tour "${tourId}" ` +
-            `was not found within ${timeoutMs}ms. ${skip ? 'Skipping the step.' : 'Ending the tour.'}`,
+            `was not found within ${timeoutMs}ms. ${outcome}`,
         );
       }
-      if (skip) {
+      if (policy === 'skip') {
         this.nextStep();
+      } else if (policy === 'pause') {
+        this.pauseTour();
       } else {
         this.finish(false);
       }
@@ -395,6 +540,12 @@ export class TourEngine {
     const { tourId, stepIndex } = this.getState();
     const step = this.currentStep();
     if (!tourId || !step) return;
+
+    if (!step.targetId) {
+      // A centred card: nothing to find or measure.
+      this.store.setState({ presented: { tourId, stepIndex, rect: null } });
+      return;
+    }
 
     const handle = this.resolveTarget(step.targetId);
     if (!handle) {
@@ -433,6 +584,7 @@ export class TourEngine {
       presented &&
       presented.tourId === tourId &&
       presented.stepIndex === stepIndex &&
+      presented.rect &&
       isSameRect(presented.rect, rect)
     ) {
       return;
@@ -447,7 +599,7 @@ export class TourEngine {
     this.stepToken++;
     this.clearStepTimers();
     this.stoppedThisSession.add(tourId);
-    this.store.setState({ tourId: null, stepIndex: 0, presented: null });
+    this.store.setState({ tourId: null, stepIndex: 0, presented: null, paused: false });
     if (markAsSeen) {
       this.persistSeen({ ...seen, [tourId]: true });
     }
@@ -467,14 +619,12 @@ export class TourEngine {
       if (state.tourId) return;
       for (const id of Object.keys(this.tours)) {
         const tour = this.tours[id];
-        if (
-          tour.autoStart &&
-          !state.seen[id] &&
-          !this.stoppedThisSession.has(id) &&
-          tour.steps.length > 0 &&
-          this.resolveTarget(tour.steps[0].targetId)
-        ) {
-          this.startTour(id);
+        if (!tour.autoStart || state.seen[id] || this.stoppedThisSession.has(id)) continue;
+        // Starts when the first shown step with a target is on screen (centred intro
+        // cards before it don't count: they would show anywhere).
+        const anchor = tour.steps.find((step, i) => step.targetId && this.isShown(tour, i));
+        if (anchor?.targetId && this.resolveTarget(anchor.targetId)) {
+          this.start(id, undefined, true);
           break; // Start only one auto-tour at a time
         }
       }

@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0-beta.4 — 2026-10-19
+
+Walkthroughs: "How do I…?" guidance through real tasks.
+
+### Added
+- `advanceOn` on steps: `'press'` keeps the highlighted element tappable (with a ring around it) and moves on when the user taps it; `{ event }` moves on when the app calls `emit(event)`. Other steps now block taps on the highlighted element explicitly.
+- Steps without a `targetId` are drawn as a centred card (intros, "All done!").
+- `kind: 'walkthrough'`, `title`, `description`, `keywords` on tours, and `useTourCatalog({ kind, query })` to list and search them in a help screen.
+- Pause and resume: `onMissingTarget: 'pause'` (the default for walkthroughs) hides the tour and shows a "Resume" chip (`renderResumeChip` to customize). `resumeTour()` continues from the latest step whose element is on screen; `pauseTour()`; `status: 'paused'`.
+- `canStart(context)` on tours with `onStartBlocked(tour, reason)` on the provider; blocked auto-starts are skipped silently.
+- `when(context)` on steps; `TourProvider` / `createTourController` take `context`. Step indicators count only the steps shown.
+- `TourTooltipProps.isActionStep` / `isCentered`; the built-in card hides Next on action steps and says "Exit" in walkthroughs.
+
+### Changed
+- `PresentedStep.rect` is `null` for centred steps.
+- An auto-start tour starts when its first step *with a target* is on screen (centred intro cards don't count).
+- `presentation="modal"` can't let taps through to the app, so action steps there show a Next button.
+
 ## 2.0.0-beta.3 — 2026-10-19
 
 ### Changed
