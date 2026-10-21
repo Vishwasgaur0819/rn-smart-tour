@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Tooling
+- Removed `publishConfig.tag: "next"` from package.json: some npm versions apply it, so `npm publish` of 2.0.0 went to `next` instead of `latest` (fixed with `npm dist-tag add rn-smart-tour@2.0.0 latest`). The publish check now refuses to run while `publishConfig.tag` is set; prereleases are published with `npm publish --tag next`.
+
 ## 2.0.0 — 2026-10-21
 
 First stable release of 2.x, now on the `latest` tag (`npm install rn-smart-tour`). Same code as 2.0.0-rc.0, which was piloted in a production enterprise React Native app (React Native 0.85, New Architecture) on iPad and on iOS and Android phones: auto-start and replayed screen tours, "How do I…?" walkthroughs across the drawer, screens, forms and popups, pause/resume, blocked starts offline, and the app's own popups opened during a tour.
