@@ -27,13 +27,13 @@
 ## 📦 Installation
 
 ```sh
-npm install rn-smart-tour@next   # 2.0 release candidate (this README)
-npm install rn-smart-tour        # 1.x (stable, until 2.0.0)
+npm install rn-smart-tour        # 2.x (this README)
+npm install rn-smart-tour@1      # 1.x
 ```
 
 Requires React 18+ and React Native 0.73+. No native code, so no `pod install` or rebuild is needed. React Navigation (6+) is optional.
 
-Checked on device on iOS and Android with React Native 0.88 (New Architecture), and on iOS with React Native 0.81 on the old architecture, with React Navigation 7. Unit tests run against React Native 0.73.
+Checked on device on iOS and Android with React Native 0.88 (New Architecture), and on iOS with React Native 0.81 on the old architecture, with React Navigation 7, and piloted in a production enterprise app (React Native 0.85) on iPad and iOS and Android phones. Unit tests run against React Native 0.73.
 
 ---
 

@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0 — 2026-10-21
+
+First stable release of 2.x, now on the `latest` tag (`npm install rn-smart-tour`). Same code as 2.0.0-rc.0, which was piloted in a production enterprise React Native app (React Native 0.85, New Architecture) on iPad and on iOS and Android phones: auto-start and replayed screen tours, "How do I…?" walkthroughs across the drawer, screens, forms and popups, pause/resume, blocked starts offline, and the app's own popups opened during a tour.
+
+See 2.0.0-rc.0 below for the highlights, breaking changes since 1.x and known limitations. 1.x stays installable with `npm install rn-smart-tour@1`.
+
 ## 2.0.0-rc.0 — 2026-10-19
 
 Release candidate for 2.0.0, published under `next` (`npm install rn-smart-tour@next`). `latest` stays on 1.1.0 until 2.0.0. The API is frozen: only fixes until 2.0.0. This entry sums up 2.0 compared with 1.x; the betas below have the details.
